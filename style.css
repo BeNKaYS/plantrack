@@ -1,104 +1,362 @@
-/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 */
-/* Plantrack — Özel Stiller & Hallmark Tasarım Sistemi */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · theme: Cobalt · pre-emit critique: P5 H5 E5 S5 R5 V5 */
+@import url('tokens.css');
 
-:root {
-  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  --font-display: 'Space Grotesk', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-
-  --color-bg-base: #090d16;
-  --color-sidebar: #0d121f;
-  --color-card: #131b2e;
-  --color-card-border: #1e293b;
-  --color-accent: #3b82f6;
-  --color-accent-hover: #2563eb;
-  --color-accent-dim: rgba(59, 130, 246, 0.12);
-  --color-text-main: #f1f5f9;
-  --color-text-muted: #94a3b8;
-  --color-text-faint: #64748b;
-  --sidebar-default-width: 270px;
-}
-
-* {
+*, *::before, *::after {
   box-sizing: border-box;
 }
 
-body {
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
   font-family: var(--font-sans);
-  background-color: var(--color-bg-base);
-  color: var(--color-text-main);
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-h1, h2, h3, .font-display {
+/* Typography Scales & Families */
+h1, h2, h3, h4, .font-display {
   font-family: var(--font-display);
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  color: var(--color-ink);
 }
 
-code, kbd, samp, pre, .font-mono {
+.font-mono, kbd, code, .badge-count, .meta-tag {
   font-family: var(--font-mono);
+  font-feature-settings: 'tnum' on, 'zero' on;
 }
 
-/* Sidebar & Resizer */
+/* Keyboard Hints / Hotkeys */
+kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-ink-faint);
+  background: var(--color-paper-3);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-xs);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SIDEBAR & RESIZER
+───────────────────────────────────────────────────────────── */
 #sidebar {
   width: var(--sidebar-default-width);
   min-width: 180px;
   max-width: 520px;
+  height: 100%;
   flex-shrink: 0;
-  transition: background-color 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-paper-2);
+  border-right: 1px solid var(--color-rule);
   user-select: none;
+  position: relative;
+  z-index: 10;
 }
 
 #sidebar-resizer {
   width: 4px;
+  height: 100%;
   cursor: col-resize;
-  background-color: #1e293b;
-  transition: background-color 0.15s ease, width 0.15s ease;
+  background-color: transparent;
   position: relative;
-  z-index: 20;
+  z-index: 30;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
-#sidebar-resizer:hover,
-#sidebar-resizer.resizing {
+#sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 1px;
+  width: 2px;
+  height: 100%;
+  background-color: var(--color-rule);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+#sidebar-resizer:hover::after,
+#sidebar-resizer.resizing::after {
   background-color: var(--color-accent);
-  width: 5px;
+  box-shadow: 0 0 8px var(--color-accent);
 }
 
-/* Nav Item Styling */
+/* ─────────────────────────────────────────────────────────────
+   NAVIGATION ITEMS (8-State Hallmark Precision)
+───────────────────────────────────────────────────────────── */
+.nav-group-title {
+  padding: 0 var(--space-2);
+  margin-bottom: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
 .nav-item {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.55rem 0.85rem;
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
   font-weight: 500;
-  color: #94a3b8;
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-  border-left: 2px solid transparent;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  text-decoration: none;
+  cursor: pointer;
+  outline: none;
+  transition: color var(--dur-fast) var(--ease-out),
+              background-color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
 }
 
+.nav-item svg {
+  color: var(--color-ink-faint);
+  transition: color var(--dur-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+
+/* Hover */
 .nav-item:hover {
-  color: #f8fafc;
-  background-color: rgba(255, 255, 255, 0.04);
+  color: var(--color-ink);
+  background-color: var(--color-paper-3);
+  border-color: var(--color-rule);
+}
+.nav-item:hover svg {
+  color: var(--color-ink-muted);
 }
 
+/* Active */
 .nav-item.active {
-  color: #ffffff;
-  background-color: var(--color-accent-dim);
-  border-left-color: var(--color-accent);
+  color: var(--color-ink);
+  background-color: var(--color-accent-subtle);
+  border-color: var(--color-accent-border);
+  box-shadow: inset 3px 0 0 var(--color-accent);
   font-weight: 600;
 }
-
 .nav-item.active svg {
-  color: #60a5fa;
+  color: var(--color-accent);
 }
 
-/* Scrollbar Customization */
+/* Active Press */
+.nav-item:active {
+  transform: translateY(1px);
+}
+
+/* Focus Visible */
+.nav-item:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TACTILE BADGES & COUNTERS
+───────────────────────────────────────────────────────────── */
+.badge-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: var(--radius-xs);
+  background: var(--color-paper-4);
+  color: var(--color-ink-muted);
+  border: 1px solid var(--color-rule);
+}
+
+.badge-count.badge-accent {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  border-color: var(--color-accent-border);
+}
+
+.badge-count.badge-danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+}
+
+.meta-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--color-paper-3);
+  color: var(--color-ink-faint);
+  border: 1px solid var(--color-rule);
+  letter-spacing: -0.01em;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TOPBAR & CONTROLS
+───────────────────────────────────────────────────────────── */
+#topbar {
+  background: var(--color-paper-2);
+  border-bottom: 1px solid var(--color-rule);
+  box-shadow: var(--shadow-sm);
+}
+
+.select-instrument {
+  appearance: none;
+  background-color: var(--color-paper-3);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 28px 6px 10px;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='oklch(56% 0.014 250)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              background-color var(--dur-fast) var(--ease-out);
+}
+
+.select-instrument:hover {
+  border-color: var(--color-rule-hover);
+  background-color: var(--color-paper-4);
+}
+
+.select-instrument:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+
+/* Tactile Buttons */
+.btn-tactile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+
+.btn-tactile-primary {
+  background: var(--color-accent);
+  color: oklch(98% 0.005 250);
+  border-color: oklch(68% 0.22 254);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), var(--shadow-sm);
+}
+
+.btn-tactile-primary:hover {
+  background: var(--color-accent-hover);
+}
+
+.btn-tactile-primary:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.btn-tactile-ghost {
+  background: var(--color-paper-3);
+  color: var(--color-ink-muted);
+  border-color: var(--color-rule);
+}
+
+.btn-tactile-ghost:hover {
+  background: var(--color-paper-4);
+  color: var(--color-ink);
+  border-color: var(--color-rule-hover);
+}
+
+.btn-tactile:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   WORKBENCH OVERVIEW & CARDS
+───────────────────────────────────────────────────────────── */
+.workbench-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+
+.workbench-card {
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  position: relative;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.workbench-card:hover {
+  border-color: var(--color-rule-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.workbench-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.workbench-card-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-ink-faint);
+}
+
+.workbench-metric-value {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-ink);
+  line-height: 1.1;
+  margin-bottom: var(--space-1);
+}
+
+.workbench-metric-sub {
+  font-size: 12px;
+  color: var(--color-ink-faint);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   CUSTOM SCROLLBAR
+───────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -106,39 +364,42 @@ code, kbd, samp, pre, .font-mono {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 9999px;
+  background: var(--color-rule);
+  border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: var(--color-rule-strong);
 }
 
-/* Badges */
-.badge-count {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 0.1rem 0.45rem;
-  border-radius: 9999px;
-  line-height: 1.2;
+/* ─────────────────────────────────────────────────────────────
+   TOAST NOTIFICATION (Microinteraction Recipe)
+───────────────────────────────────────────────────────────── */
+#plantrack-toast {
+  position: fixed;
+  bottom: var(--space-5);
+  right: var(--space-5);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 14px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--color-paper-3);
+  color: var(--color-ink);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity var(--dur-base) var(--ease-out),
+              transform var(--dur-base) var(--ease-out);
 }
 
-/* Modal animation */
-#modal-overlay {
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-
-#modal-container {
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.65);
-}
-
-/* Focus visibility for accessibility */
-button:focus-visible,
-select:focus-visible,
-input:focus-visible,
-a:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+#plantrack-toast.active {
+  opacity: 1;
+  transform: translateY(0);
 }

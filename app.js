@@ -70,6 +70,7 @@ const App = {
     // Sonraki aşamalarda ilgili view render fonksiyonları çağrılacak
     switch (this.currentView) {
       case 'overview':
+        this.renderOverview();
         break;
       case 'cockpit':
         break;
@@ -281,26 +282,166 @@ const App = {
     }
   },
 
+  renderOverview() {
+    const view = document.getElementById('view-overview');
+    if (!view) return;
+
+    const modul = this.getAktifModul() || { id: 'ara-sinif', ad: 'Ara Sınıflar', siniflar: ['5', '6', '7'] };
+    const ogrenciler = Store.data.ogrenciler || [];
+    const gorevler = Store.data.gorevler || [];
+    const overdueCount = gorevler.filter(g => g.durum === 'gecikmis').length;
+    const activeTasksCount = gorevler.filter(g => g.durum !== 'tamamlandi').length;
+
+    const dateStr = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    view.innerHTML = `
+      <div class="max-w-6xl mx-auto p-6 md:p-8 space-y-6">
+        <!-- Header Banner: Workbench Identity -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[var(--color-rule)]">
+          <div>
+            <div class="flex items-center gap-2 mb-1.5">
+              <span class="meta-pill">KONTROL MASASI</span>
+              <span class="text-xs font-mono text-[var(--color-ink-faint)]">${dateStr}</span>
+            </div>
+            <h1 class="text-2xl font-bold font-display tracking-tight text-[var(--color-ink)]">Koçluk Yönetim Masası</h1>
+            <p class="text-xs text-[var(--color-ink-muted)] mt-1">Öğrenci çalışma programları, ödev döngüleri ve modüler müfredat takibi</p>
+          </div>
+          <div class="flex items-center gap-2.5">
+            <div class="px-3 py-1.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-2)] border border-[var(--color-rule-strong)] flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-[var(--color-accent)] animate-pulse"></div>
+              <span class="text-xs font-mono text-[var(--color-ink-faint)]">Aktif Modül:</span>
+              <span class="text-xs font-mono font-semibold text-[var(--color-ink)]">${modul.ad}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metric Grid (Strict 4pt spacing, OKLCH cards, JetBrains Mono numbers) -->
+        <div class="workbench-grid">
+          <div class="workbench-card">
+            <div class="workbench-card-header">
+              <span class="workbench-card-title">Kayıtlı Öğrenciler</span>
+              <i data-lucide="users" class="w-4 h-4 text-[var(--color-ink-faint)]"></i>
+            </div>
+            <div class="workbench-metric-value">${ogrenciler.length}</div>
+            <div class="workbench-metric-sub flex items-center justify-between">
+              <span>Toplam Portföy</span>
+              <button onclick="App.navigateTo('students')" class="text-xs font-medium text-[var(--color-accent)] hover:underline flex items-center gap-1 cursor-pointer">Yönet <i data-lucide="arrow-right" class="w-3 h-3"></i></button>
+            </div>
+          </div>
+
+          <div class="workbench-card">
+            <div class="workbench-card-header">
+              <span class="workbench-card-title">Aktif Görevler</span>
+              <i data-lucide="check-square" class="w-4 h-4 text-[var(--color-ink-faint)]"></i>
+            </div>
+            <div class="workbench-metric-value">${activeTasksCount}</div>
+            <div class="workbench-metric-sub flex items-center justify-between">
+              <span>Devam Eden Ödev Takibi</span>
+              <button onclick="App.navigateTo('tasks')" class="text-xs font-medium text-[var(--color-accent)] hover:underline flex items-center gap-1 cursor-pointer">İncele <i data-lucide="arrow-right" class="w-3 h-3"></i></button>
+            </div>
+          </div>
+
+          <div class="workbench-card">
+            <div class="workbench-card-header">
+              <span class="workbench-card-title">Geciken Ödevler</span>
+              <i data-lucide="alert-triangle" class="w-4 h-4 ${overdueCount > 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-ink-faint)]'}"></i>
+            </div>
+            <div class="workbench-metric-value ${overdueCount > 0 ? 'text-[var(--color-danger)]' : ''}">${overdueCount}</div>
+            <div class="workbench-metric-sub flex items-center justify-between">
+              <span>${overdueCount > 0 ? 'Müdahale Gerektiren' : 'Risk Bulunmuyor'}</span>
+              <button onclick="App.navigateTo('cockpit')" class="text-xs font-medium text-[var(--color-accent)] hover:underline flex items-center gap-1 cursor-pointer">Kokpit <i data-lucide="arrow-right" class="w-3 h-3"></i></button>
+            </div>
+          </div>
+
+          <div class="workbench-card">
+            <div class="workbench-card-header">
+              <span class="workbench-card-title">Müfredat Kapsamı</span>
+              <i data-lucide="layers" class="w-4 h-4 text-[var(--color-ink-faint)]"></i>
+            </div>
+            <div class="workbench-metric-value text-base font-semibold pt-1">${modul.ad}</div>
+            <div class="workbench-metric-sub flex items-center justify-between">
+              <span class="font-mono text-[11px]">${(modul.siniflar || []).map(s => s + '. Sınıf').join(', ')}</span>
+              <button onclick="App.navigateTo('curriculum-pool')" class="text-xs font-medium text-[var(--color-accent)] hover:underline flex items-center gap-1 cursor-pointer">Havuz <i data-lucide="arrow-right" class="w-3 h-3"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Access Instrument Deck -->
+        <div class="pt-2">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-xs font-mono font-semibold tracking-wider uppercase text-[var(--color-ink-faint)]">Hızlı Çalışma Masası Modülleri</h2>
+            <span class="text-[11px] font-mono text-[var(--color-ink-faint)]">Tek Tıkla Geçiş</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div onclick="App.navigateTo('students')" class="p-4 rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] hover:border-[var(--color-rule-strong)] transition-all cursor-pointer group">
+              <div class="flex items-center gap-3 mb-2">
+                <div class="w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] flex items-center justify-center text-[var(--color-accent)] group-hover:scale-105 transition-transform">
+                  <i data-lucide="user-plus" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <h3 class="text-xs font-semibold text-[var(--color-ink)] group-hover:text-[var(--color-accent)] transition-colors">Öğrenci Portföyü</h3>
+                  <p class="text-[11px] text-[var(--color-ink-faint)]">Kayıt & sınıf ataması</p>
+                </div>
+              </div>
+              <p class="text-xs text-[var(--color-ink-muted)]">Öğrenci kayıtlarını ve hedef modül yapılandırmasını yönetin.</p>
+            </div>
+
+            <div onclick="App.navigateTo('matrix')" class="p-4 rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] hover:border-[var(--color-rule-strong)] transition-all cursor-pointer group">
+              <div class="flex items-center gap-3 mb-2">
+                <div class="w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] flex items-center justify-center text-[var(--color-accent)] group-hover:scale-105 transition-transform">
+                  <i data-lucide="calendar" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <h3 class="text-xs font-semibold text-[var(--color-ink)] group-hover:text-[var(--color-accent)] transition-colors">Haftalık Takip Matrisi</h3>
+                  <p class="text-[11px] text-[var(--color-ink-faint)]">Ders ve ödev dağılımı</p>
+                </div>
+              </div>
+              <p class="text-xs text-[var(--color-ink-muted)]">Haftalık çalışma çizelgesi ve konu kazanımlarını planlayın.</p>
+            </div>
+
+            <div onclick="App.navigateTo('curriculum-pool')" class="p-4 rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] hover:border-[var(--color-rule-strong)] transition-all cursor-pointer group">
+              <div class="flex items-center gap-3 mb-2">
+                <div class="w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] flex items-center justify-center text-[var(--color-accent)] group-hover:scale-105 transition-transform">
+                  <i data-lucide="book-marked" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <h3 class="text-xs font-semibold text-[var(--color-ink)] group-hover:text-[var(--color-accent)] transition-colors">Müfredat & Ders Havuzu</h3>
+                  <p class="text-[11px] text-[var(--color-ink-faint)]">Kazanım ve kaynak haritası</p>
+                </div>
+              </div>
+              <p class="text-xs text-[var(--color-ink-muted)]">Ders kazanımlarını ve soru bankası kaynaklarını koordine edin.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  },
+
   showToast(msg, duration = 3000) {
     let toast = document.getElementById('plantrack-toast');
     if (!toast) {
       toast = document.createElement('div');
       toast.id = 'plantrack-toast';
-      toast.className = 'fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-lg shadow-xl text-sm font-medium transition-all duration-300 transform translate-y-4 opacity-0 pointer-events-none bg-slate-900 text-slate-100 border border-slate-700/80 flex items-center gap-2';
       document.body.appendChild(toast);
     }
 
-    toast.innerHTML = `<span>${msg}</span>`;
-    toast.classList.remove('opacity-0', 'translate-y-4', 'pointer-events-none');
-    toast.classList.add('opacity-100', 'translate-y-0');
+    toast.innerHTML = `<i data-lucide="info" class="w-4 h-4 text-[var(--color-accent)]"></i><span>${msg}</span>`;
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+    toast.classList.add('active');
 
     if (this.toastTimeout) {
       clearTimeout(this.toastTimeout);
     }
 
     this.toastTimeout = setTimeout(() => {
-      toast.classList.add('opacity-0', 'translate-y-4', 'pointer-events-none');
-      toast.classList.remove('opacity-100', 'translate-y-0');
+      toast.classList.remove('active');
     }, duration);
   },
 

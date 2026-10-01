@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Plantrack — Öğrenci Takip & Koçluk Platformu</title>
 
-  <!-- Google Fonts: Plus Jakarta Sans, Space Grotesk, JetBrains Mono -->
+  <!-- Google Fonts: Plus Jakarta Sans (body), Space Grotesk (display), JetBrains Mono (data) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -20,19 +20,6 @@
             sans: ['"Plus Jakarta Sans"', 'sans-serif'],
             display: ['"Space Grotesk"', 'sans-serif'],
             mono: ['"JetBrains Mono"', 'monospace'],
-          },
-          colors: {
-            brand: {
-              50: '#eff6ff',
-              100: '#dbeafe',
-              400: '#60a5fa',
-              500: '#3b82f6',
-              600: '#2563eb',
-              700: '#1d4ed8',
-              800: '#1e40af',
-              900: '#1e3a8a',
-              950: '#172554',
-            }
           }
         }
       }
@@ -45,7 +32,8 @@
   <!-- SheetJS CDN -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
-  <!-- Custom Styles -->
+  <!-- Hallmark Design System: tokens.css + style.css -->
+  <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
 
   <!-- Dynamic Sidebar Width Style Tag & Flicker-prevention script -->
@@ -62,158 +50,168 @@
     })();
   </script>
 </head>
-<body class="h-screen w-screen flex overflow-hidden bg-slate-950 text-slate-100 font-sans">
+<body class="h-screen w-screen flex overflow-hidden font-sans">
 
-  <!-- Sidebar -->
-  <aside id="sidebar" class="flex flex-col h-full bg-slate-900 border-r border-slate-800/80 select-none overflow-hidden">
+  <!-- Sidebar: Tactile Technical Instrument -->
+  <aside id="sidebar">
     <!-- Bölüm 1: Logo & Başlık -->
-    <div class="p-4 border-b border-slate-800/80 flex items-center justify-between gap-3">
-      <div id="sidebar-logo-btn" class="flex items-center gap-3 cursor-pointer group">
-        <img src="assets/logo.svg" alt="Plantrack Logo" class="w-9 h-9 rounded-lg transition-transform group-hover:scale-105">
-        <div>
-          <div class="flex items-center gap-1.5">
-            <span class="font-display font-bold text-lg tracking-tight text-white group-hover:text-blue-400 transition-colors">Plantrack</span>
-            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold">v1.0</span>
+    <div class="p-3.5 border-b border-[var(--color-rule)] flex items-center justify-between gap-3">
+      <div id="sidebar-logo-btn" class="flex items-center gap-2.5 cursor-pointer group">
+        <img src="assets/logo.svg" alt="Plantrack Logo" class="w-8 h-8 rounded-[var(--radius-sm)] transition-transform group-hover:scale-105 shrink-0">
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5 leading-none">
+            <span class="font-display font-bold text-base tracking-tight text-[var(--color-ink)] group-hover:text-[var(--color-accent)] transition-colors">Plantrack</span>
+            <span class="text-[9px] font-mono px-1 py-0.5 rounded-[var(--radius-xs)] bg-[var(--color-paper-3)] text-[var(--color-ink-faint)] border border-[var(--color-rule)] font-semibold">v1.0</span>
           </div>
           <!-- Aktif Öğrenci Modül Rozeti -->
-          <div id="sidebar-modul-badge" class="hidden mt-0.5">
-            <span id="sidebar-modul-text" class="text-[11px] font-mono font-medium text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">LGS · 8. Sınıf</span>
+          <div id="sidebar-modul-badge" class="hidden mt-1">
+            <span id="sidebar-modul-text" class="meta-pill text-[10px] text-[var(--color-success)] bg-[var(--color-success-bg)] border-[var(--color-success-border)]"></span>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Bölüm 2: Navigasyon -->
-    <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+    <nav class="flex-1 overflow-y-auto px-2.5 py-4 space-y-5">
       <!-- Grup 1: Yönetim Paneli -->
       <div>
-        <div class="px-2 mb-2 text-[11px] font-mono font-semibold tracking-wider text-slate-400 uppercase">Yönetim Paneli</div>
-        <div class="space-y-1">
-          <button data-nav="overview" class="nav-item w-full text-left justify-between active">
+        <div class="nav-group-title">Yönetim Paneli</div>
+        <div class="space-y-0.5">
+          <button data-nav="overview" class="nav-item active">
             <div class="flex items-center gap-2.5">
               <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
               <span>Ana Panel</span>
             </div>
-            <span id="nav-badge-overview" class="badge-count bg-slate-800 text-slate-300 border border-slate-700">0</span>
+            <span id="nav-badge-overview" class="badge-count">0</span>
           </button>
 
-          <button data-nav="cockpit" class="nav-item w-full text-left justify-between">
+          <button data-nav="cockpit" class="nav-item">
             <div class="flex items-center gap-2.5">
               <i data-lucide="gauge" class="w-4 h-4"></i>
               <span>Öğrenci Kokpiti</span>
             </div>
-            <span id="nav-badge-cockpit" class="badge-count bg-red-500/15 text-red-400 border border-red-500/30 hidden">0</span>
+            <span id="nav-badge-cockpit" class="badge-count badge-danger hidden">0</span>
           </button>
         </div>
       </div>
 
       <!-- Grup 2: Takip & Planlama -->
       <div>
-        <div class="px-2 mb-2 text-[11px] font-mono font-semibold tracking-wider text-slate-400 uppercase">Takip & Planlama</div>
-        <div class="space-y-1">
-          <button data-nav="matrix" class="nav-item w-full text-left">
-            <i data-lucide="calendar-days" class="w-4 h-4"></i>
-            <span>Çalışma & Ödev Matrisi</span>
+        <div class="nav-group-title">Takip & Planlama</div>
+        <div class="space-y-0.5">
+          <button data-nav="matrix" class="nav-item">
+            <div class="flex items-center gap-2.5">
+              <i data-lucide="calendar-days" class="w-4 h-4"></i>
+              <span>Çalışma & Ödev Matrisi</span>
+            </div>
           </button>
 
-          <button data-nav="tasks" class="nav-item w-full text-left justify-between">
+          <button data-nav="tasks" class="nav-item">
             <div class="flex items-center gap-2.5">
               <i data-lucide="check-square" class="w-4 h-4"></i>
               <span>Ödev Geçmişi</span>
             </div>
-            <span id="nav-badge-tasks" class="badge-count bg-blue-500/15 text-blue-400 border border-blue-500/30 hidden">0</span>
+            <span id="nav-badge-tasks" class="badge-count badge-accent hidden">0</span>
           </button>
         </div>
       </div>
 
       <!-- Grup 3: Raporlar & Çıktılar -->
       <div>
-        <div class="px-2 mb-2 text-[11px] font-mono font-semibold tracking-wider text-slate-400 uppercase">Raporlar & Çıktılar</div>
-        <div class="space-y-1">
-          <button data-nav="report" class="nav-item w-full text-left justify-between">
+        <div class="nav-group-title">Raporlar & Çıktılar</div>
+        <div class="space-y-0.5">
+          <button data-nav="report" class="nav-item">
             <div class="flex items-center gap-2.5">
               <i data-lucide="file-text" class="w-4 h-4"></i>
               <span>Raporlar</span>
             </div>
-            <span class="text-[10px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60">A4 Karne</span>
+            <span class="meta-pill">A4 Karne</span>
           </button>
 
-          <button data-nav="hata-defteri" class="nav-item w-full text-left justify-between">
+          <button data-nav="hata-defteri" class="nav-item">
             <div class="flex items-center gap-2.5">
               <i data-lucide="book-open" class="w-4 h-4"></i>
               <span>Hata Defteri</span>
             </div>
-            <span class="text-[10px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60">A4 & Analiz</span>
+            <span class="meta-pill">A4 & Analiz</span>
           </button>
 
-          <button data-nav="cizelge-robotu" class="nav-item w-full text-left justify-between">
+          <button data-nav="cizelge-robotu" class="nav-item">
             <div class="flex items-center gap-2.5">
               <i data-lucide="bot" class="w-4 h-4"></i>
               <span>Çizelge Robotu</span>
             </div>
-            <span class="text-[10px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60">A4 Şablon</span>
+            <span class="meta-pill">A4 Şablon</span>
           </button>
         </div>
       </div>
 
       <!-- Grup 4: Havuz & Portföy -->
       <div>
-        <div class="px-2 mb-2 text-[11px] font-mono font-semibold tracking-wider text-slate-400 uppercase">Havuz & Portföy</div>
-        <div class="space-y-1">
-          <button data-nav="curriculum-pool" class="nav-item w-full text-left">
-            <i data-lucide="library" class="w-4 h-4"></i>
-            <span>Müfredat & Dersler</span>
+        <div class="nav-group-title">Havuz & Portföy</div>
+        <div class="space-y-0.5">
+          <button data-nav="curriculum-pool" class="nav-item">
+            <div class="flex items-center gap-2.5">
+              <i data-lucide="library" class="w-4 h-4"></i>
+              <span>Müfredat & Dersler</span>
+            </div>
           </button>
 
-          <button data-nav="library" class="nav-item w-full text-left">
-            <i data-lucide="layers" class="w-4 h-4"></i>
-            <span>Kaynaklar</span>
+          <button data-nav="library" class="nav-item">
+            <div class="flex items-center gap-2.5">
+              <i data-lucide="layers" class="w-4 h-4"></i>
+              <span>Kaynaklar</span>
+            </div>
           </button>
 
-          <button data-nav="students" class="nav-item w-full text-left">
-            <i data-lucide="users" class="w-4 h-4"></i>
-            <span>Öğrenci Portföyü</span>
+          <button data-nav="students" class="nav-item">
+            <div class="flex items-center gap-2.5">
+              <i data-lucide="users" class="w-4 h-4"></i>
+              <span>Öğrenci Portföyü</span>
+            </div>
           </button>
         </div>
       </div>
 
       <!-- Grup 5: Araçlar & Analiz -->
       <div>
-        <div class="px-2 mb-2 text-[11px] font-mono font-semibold tracking-wider text-slate-400 uppercase">Araçlar & Analiz</div>
-        <div class="space-y-1">
-          <button data-nav="sinav-notlari" class="nav-item w-full text-left">
-            <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
-            <span>Sınav Notları</span>
+        <div class="nav-group-title">Araçlar & Analiz</div>
+        <div class="space-y-0.5">
+          <button data-nav="sinav-notlari" class="nav-item">
+            <div class="flex items-center gap-2.5">
+              <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+              <span>Sınav Notları</span>
+            </div>
           </button>
         </div>
       </div>
     </nav>
 
     <!-- Bölüm 3: Alt Kısım -->
-    <div class="p-3 border-t border-slate-800/80 space-y-2.5 bg-slate-900/60">
-      <!-- Yedekleme Satırı -->
-      <div class="flex items-center justify-between px-2 py-1 bg-slate-950/40 rounded-lg border border-slate-800/50">
-        <span class="text-[11px] font-mono text-slate-400">Yerel Depolama</span>
+    <div class="p-2.5 border-t border-[var(--color-rule)] space-y-2 bg-[var(--color-paper-2)]">
+      <!-- Yerel Depolama & Yedekleme -->
+      <div class="flex items-center justify-between px-2 py-1 bg-[var(--color-paper-3)] rounded-[var(--radius-sm)] border border-[var(--color-rule)]">
+        <span class="text-[10px] font-mono text-[var(--color-ink-faint)]">Yerel Depolama</span>
         <div class="flex items-center gap-1">
-          <button id="btn-sidebar-import-json" class="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="JSON Yedek Yükle">
+          <button id="btn-sidebar-import-json" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-4)] transition-colors" title="JSON Yedek Yükle">
             <i data-lucide="upload" class="w-3.5 h-3.5"></i>
           </button>
-          <button id="btn-export-backup" class="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="JSON Yedek İndir">
+          <button id="btn-export-backup" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-4)] transition-colors" title="JSON Yedek İndir">
             <i data-lucide="download" class="w-3.5 h-3.5"></i>
           </button>
         </div>
       </div>
 
       <!-- Koç Kartı -->
-      <div id="btn-open-coach-settings" onclick="App.openCoachSettingsModal()" class="flex items-center justify-between p-2 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-800 transition-colors cursor-pointer group">
+      <div id="btn-open-coach-settings" onclick="App.openCoachSettingsModal()" class="flex items-center justify-between p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] hover:bg-[var(--color-paper-4)] border border-[var(--color-rule)] transition-colors cursor-pointer group">
         <div class="flex items-center gap-2.5 min-w-0">
-          <div id="sidebar-coach-avatar" class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-mono font-bold shrink-0">EK</div>
+          <div id="sidebar-coach-avatar" class="w-7 h-7 rounded-[var(--radius-xs)] bg-[var(--color-accent)] text-[var(--color-ink)] flex items-center justify-center text-xs font-mono font-bold shrink-0">EK</div>
           <div class="min-w-0 leading-tight">
-            <div id="sidebar-coach-name" class="text-xs font-semibold text-slate-200 truncate group-hover:text-blue-400 transition-colors">Eren Kaya</div>
-            <div id="sidebar-coach-title" class="text-[11px] text-slate-400 truncate">Eğitim Koçu</div>
+            <div id="sidebar-coach-name" class="text-xs font-semibold text-[var(--color-ink)] truncate group-hover:text-[var(--color-accent)] transition-colors">Eren Kaya</div>
+            <div id="sidebar-coach-title" class="text-[10px] text-[var(--color-ink-faint)] truncate">Eğitim Koçu</div>
           </div>
         </div>
-        <i data-lucide="settings" class="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-colors shrink-0"></i>
+        <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 text-[var(--color-ink-faint)] group-hover:text-[var(--color-ink)] transition-colors shrink-0"></i>
       </div>
     </div>
   </aside>
@@ -222,28 +220,28 @@
   <div id="sidebar-resizer" title="Genişliği ayarlamak için sürükleyin, sıfırlamak için çift tıklayın"></div>
 
   <!-- Sağ Ana Alan: Topbar + Main İçerik -->
-  <div class="flex-1 flex flex-col h-full overflow-hidden">
+  <div class="flex-1 flex flex-col h-full overflow-hidden bg-[var(--color-paper)]">
     <!-- Topbar (overview sayfasında gizli, diğer sayfalarda görünür) -->
-    <header id="topbar" class="hidden h-14 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-6 flex items-center justify-between shrink-0 z-10">
+    <header id="topbar" class="hidden h-14 px-6 flex items-center justify-between shrink-0 z-10">
       <!-- Sol Taraf: Öğrenci Seçici & Rozet -->
       <div class="flex items-center gap-3">
         <div class="flex items-center gap-2">
-          <i data-lucide="user-check" class="w-4 h-4 text-blue-400"></i>
-          <select id="select-active-student" class="bg-slate-800/90 text-xs font-medium text-slate-200 border border-slate-700/80 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
+          <i data-lucide="user-check" class="w-4 h-4 text-[var(--color-accent)]"></i>
+          <select id="select-active-student" class="select-instrument">
             <option value="">Öğrenci Seçilmedi</option>
           </select>
         </div>
-        <span id="active-student-badge" class="hidden text-xs font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium"></span>
+        <span id="active-student-badge" class="hidden meta-pill text-[var(--color-accent)] bg-[var(--color-accent-subtle)] border-[var(--color-accent-border)] font-medium"></span>
       </div>
 
       <!-- Sağ Taraf: Gecikme Uyarısı & Hızlı Yeni Görev Butonu -->
       <div class="flex items-center gap-3">
-        <button id="topbar-overdue-alert" class="hidden flex items-center gap-2 px-2.5 py-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/25 hover:bg-red-500/20 text-xs font-medium transition-colors cursor-pointer" title="Geciken Ödevler">
-          <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-400"></i>
+        <button id="topbar-overdue-alert" class="hidden flex items-center gap-2 px-2.5 py-1 rounded-[var(--radius-sm)] bg-[var(--color-danger-bg)] text-[var(--color-danger)] border border-[var(--color-danger-border)] hover:opacity-90 text-xs font-medium transition-all cursor-pointer" title="Geciken Ödevler">
+          <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
           <span><span id="topbar-overdue-count">0</span> Geciken Ödev</span>
         </button>
 
-        <button id="btn-quick-new-task" onclick="App.openTaskModal()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-all shadow-sm shadow-blue-500/20 cursor-pointer">
+        <button id="btn-quick-new-task" onclick="App.openTaskModal()" class="btn-tactile btn-tactile-primary">
           <i data-lucide="plus" class="w-3.5 h-3.5"></i>
           <span>Hızlı Ödev Ekle</span>
         </button>
@@ -267,8 +265,8 @@
   </div>
 
   <!-- Modal Yapısı -->
-  <div id="modal-overlay" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
-    <div id="modal-container" class="bg-slate-900 border border-slate-800 rounded-xl max-w-lg w-full overflow-hidden shadow-2xl">
+  <div id="modal-overlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div id="modal-container" class="bg-[var(--color-paper-2)] border border-[var(--color-rule-strong)] rounded-[var(--radius-lg)] max-w-lg w-full overflow-hidden shadow-2xl">
       <div id="modal-content" class="p-6"></div>
     </div>
   </div>
