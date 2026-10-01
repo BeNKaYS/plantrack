@@ -35,6 +35,13 @@ const GOREV_DURUMLARI = {
   gecikti:      { label: 'Gecikti',      renk: 'rose'    }
 };
 
+const HATA_TURLERI = [
+  { id: 'Bilgi Eksikliği',   label: 'Bilgi Eksikliği',   renk: 'rose'   },
+  { id: 'Dikkat Hatası',     label: 'Dikkat Hatası',     renk: 'amber'  },
+  { id: 'Soru Kökü/Anlama',  label: 'Soru Kökü/Anlama',  renk: 'blue'   },
+  { id: 'Süre/Yetişmedi',    label: 'Süre/Yetişmedi',    renk: 'purple' }
+];
+
 const EXCEL_OGRENCI_SABLONU = {
   sutunlar: [
     { key: 'ad',          label: 'Ad',               zorunlu: true,  aciklama: 'Öğrencinin adı' },

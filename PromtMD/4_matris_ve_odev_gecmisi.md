@@ -34,7 +34,8 @@ Başlık: "Çalışma & Ödev Matrisi"
 Alt başlık: aktif öğrencinin adı + modül rozeti
 
 Ders sekmeleri: `Store.getDerslerForOgrenci(ogr)` ile aktif öğrencinin derslerini al.
-Her ders bir tab butonu. Aktif tab vurgulu. Tıklanınca `App.matrisAktifDersId` güncellenir, konu listesi yeniden render edilir.
+Her ders bir tab butonu. Aktif tab vurgulu. Tıklanınca `App.matrisAktifDersId` güncellenir,
+konu listesi yeniden render edilir.
 
 Sağ tarafta:
 - "Kaynak Ekle" butonu → `App.openKaynakModal()`
@@ -78,7 +79,8 @@ Konu seçiliyse:
 **Konu Başlığı Alanı:**
 - Konu adı (büyük, bold)
 - Ünite adı (muted)
-- Durum değiştirici: 4 buton (İşlenmedi / Çalışılıyor / Tamam / Tekrar Lazım) — tıklanınca `Store.setKonuDurumu()` + sağ panel yeniden render
+- Durum değiştirici: 4 buton (İşlenmedi / Çalışılıyor / Tamam / Tekrar Lazım)
+  - Tıklanınca `Store.setKonuDurumu()` + sağ panel yeniden render
 - Not alanı: `Store.getKonuDurumu().not` gösterilir, tıklanınca düzenlenebilir textarea
 
 **Kaynak Kartları:**
@@ -94,11 +96,10 @@ D: 38  Y: 5  B: 2
 [+ Soru Ekle / Güncelle]  [Ödev Oluştur]
 ```
 
-- **Soru Ekle / Güncelle** butonu → `App.openSoruGirisiModal(ogr.id, konu.id, kaynak.id)` — D/Y/B girişi yapılan küçük modal
+- **Soru Ekle / Güncelle** butonu → `App.openSoruGirisiModal(ogr.id, konu.id, kaynak.id)`
 - **Ödev Oluştur** butonu → `App.openGorevModal(ogr.id, null, konu.id)` — otomatik konu ve kaynak seçili gelir
 
-Seçili kaynaklar yoksa veya bu konuda hiç kaynak çalışılmamışsa:
-"Henüz kaynak eklenmemiş" mesajı + "Kaynak Seç" butonu → `App.openMatrisSutunModal()`
+Seçili kaynaklar yoksa: "Henüz kaynak eklenmemiş" + "Kaynak Seç" butonu → `App.openMatrisSutunModal()`
 
 **İlerleme Özeti (konu bazlı toplam):**
 Tüm kaynakların toplamı: `X soru çözüldü, %Y doğruluk`
@@ -134,7 +135,7 @@ Sağ:
 - "+ Yeni Ödev" butonu → `App.openGorevModal(ogr.id)`
 - Tamamlananları gizle toggle: `id="tasks-hide-completed"` — varsayılan: tamamlananlar gösterilir
 
-State değişkenleri `App` nesnesinde:
+State değişkenleri `App`'te:
 - `App.tasksSearchQuery`
 - `App.tasksDurumFilter`
 - `App.tasksDersFilter`
@@ -149,11 +150,13 @@ Küçük, muted metin: "X aktif, Y gecikmiş, Z bu hafta tamamlandı"
 Görevler şu gruplara ayrılır ve her grup kendi başlığıyla gösterilir:
 
 ```
-🔴 Gecikmiş (X)
-🟡 Bugün Teslim (X)
-🔵 Yaklaşan (X)
-✅ Tamamlananlar (X) — varsayılan kapalı, genişletilebilir
+Gecikmiş (X)       — kırmızı başlık
+Bugün Teslim (X)   — amber başlık
+Yaklaşan (X)       — slate başlık
+Tamamlananlar (X)  — gizlenebilir bölüm
 ```
+
+Boş gruplar gösterilmez.
 
 Her görev kartı:
 - Sol kenar: ders rengi (4px dikey çizgi)
@@ -194,7 +197,7 @@ case 'tasks':  this.renderTasks();  break;
 
 1. `App.matrisAktifDersId` ilk açılışta öğrencinin ilk dersi olarak set edilir
 2. `App.matrisAktifKonuId` ilk açılışta null — kullanıcı seçene kadar "konu seçin" mesajı
-3. Ders, konu, kaynak adları hepsi `DERSLER`, `KONULAR`, `Store.data.kaynaklar`'dan okunur — hardcode yok
-4. Filtreleme state'leri view'lar arası geçişte korunur — her `renderTasks()` çağrısında sıfırlanmaz
-5. Görev yoksa her grup başlığı gizlenir — boş grup başlığı gösterilmez
-6. Soru girişinde negatif sayı kabul edilmez, toplam `hedefSoru`'yu aşamaz
+3. Ders, konu, kaynak adları hepsi Store'dan okunur — hardcode yok
+4. Filtre state'leri view'lar arası geçişte korunur
+5. Boş gruplar gösterilmez
+6. Soru girişinde negatif sayı kabul edilmez

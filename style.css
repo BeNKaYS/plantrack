@@ -413,10 +413,13 @@ kbd {
   }
   #print-area {
     display: block !important;
-    position: fixed;
-    inset: 0;
-    background: #ffffff;
-    color: #000000;
+    position: static !important;
+    inset: auto !important;
+    background: #ffffff !important;
+    color: #111827 !important;
     z-index: 9999;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 }

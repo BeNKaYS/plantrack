@@ -474,6 +474,13 @@ const Store = {
 
   addHata(veri) {
     const id = 'hta-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
+    
+    // Otomatik 1 gün sonraya tekrar tarihi
+    let defaultTekrar = '';
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    defaultTekrar = d.toISOString().split('T')[0];
+
     const yeniHata = {
       id,
       ogrenciId: veri.ogrenciId || this.data.aktifOgrenciId,
@@ -481,9 +488,11 @@ const Store = {
       konuId: veri.konuId || '',
       hataTuru: veri.hataTuru || 'Bilgi Eksikliği',
       aciklama: (veri.aciklama || '').trim(),
+      asama: Number(veri.asama) || 1, // 1: 1 gün sonra, 2: 3 gün sonra, 3: 7 gün sonra, 4: tamamlandı
       telafiDurumu: Boolean(veri.telafiDurumu),
       olusturmaTarihi: new Date().toISOString(),
-      tekrarTarihi: veri.tekrarTarihi || ''
+      tekrarTarihi: veri.tekrarTarihi || defaultTekrar,
+      tamamlanmaTarihi: veri.tamamlanmaTarihi || ''
     };
 
     if (!Array.isArray(this.data.hataKayitlari)) {
@@ -494,10 +503,49 @@ const Store = {
     return yeniHata;
   },
 
+  telafiIlerletHata(id) {
+    const list = this.data.hataKayitlari || [];
+    const idx = list.findIndex(h => String(h.id) === String(id));
+    if (idx === -1) return null;
+
+    const hata = list[idx];
+    const curAsama = Number(hata.asama) || 1;
+    const bugun = new Date();
+
+    if (curAsama === 1) {
+      // 1. gün tamamlandı -> 3 gün sonra
+      const nextDate = new Date();
+      nextDate.setDate(bugun.getDate() + 3);
+      hata.asama = 2;
+      hata.tekrarTarihi = nextDate.toISOString().split('T')[0];
+      hata.telafiDurumu = false;
+    } else if (curAsama === 2) {
+      // 3. gün tamamlandı -> 7 gün sonra
+      const nextDate = new Date();
+      nextDate.setDate(bugun.getDate() + 7);
+      hata.asama = 3;
+      hata.tekrarTarihi = nextDate.toISOString().split('T')[0];
+      hata.telafiDurumu = false;
+    } else {
+      // 7. gün tamamlandı -> Döngü tamamlandı
+      hata.asama = 4;
+      hata.telafiDurumu = true;
+      hata.tamamlanmaTarihi = bugun.toISOString().split('T')[0];
+    }
+
+    this.save();
+    return hata;
+  },
+
   updateHata(id, updates) {
     const list = this.data.hataKayitlari || [];
     const idx = list.findIndex(h => String(h.id) === String(id));
     if (idx === -1) return null;
+
+    // Eğer sadece { telafiDurumu: true } gönderildiyse döngüyü ilerlet
+    if (updates.telafiDurumu === true && updates.asama === undefined) {
+      return this.telafiIlerletHata(id);
+    }
 
     const guncel = Object.assign({}, list[idx], updates);
     this.data.hataKayitlari[idx] = guncel;

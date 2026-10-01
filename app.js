@@ -22,6 +22,18 @@ const App = {
   tasksDersFilter: '',
   tasksHideCompleted: false,
 
+  // Raporlar State
+  reportAktifSablon: 'slip', // 'slip' | 'full'
+  reportSelectedOgrenciId: '',
+
+  // Hata Defteri State
+  hataAktifSekme: 'a4', // 'a4' | 'dijital'
+  hataSelectedOgrenciId: '',
+  hataFormModu: 'dolu', // 'dolu' | 'bos'
+  hataSatirSayisi: 15, // 10 | 15 | 20
+  hataDersFilter: '',
+  hataTurFilter: '',
+
   init() {
     Store.init();
     this.applyTheme(this.currentTheme);
@@ -159,8 +171,10 @@ const App = {
         this.renderTasks();
         break;
       case 'report':
+        this.renderReport();
         break;
       case 'hata-defteri':
+        this.renderHataDefteri();
         break;
       case 'cizelge-robotu':
         break;
@@ -2222,6 +2236,1048 @@ const App = {
     Store.updateOgrenci(ogr.id, { kocNotu: val });
     this.showToast('Haftalık koç direktifi güncellendi');
     this.renderTasks();
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // VIEW 5: RAPORLAR (renderReport)
+  // ─────────────────────────────────────────────────────────────
+  setReportSablon(sablon) {
+    this.reportAktifSablon = sablon;
+    this.renderReport();
+  },
+
+  onReportOgrenciChange(ogrId) {
+    this.reportSelectedOgrenciId = ogrId;
+    this.renderReport();
+  },
+
+  fillReportAktifOgrenci() {
+    const aktif = Store.getAktifOgrenci();
+    if (!aktif) {
+      this.showToast('Aktif öğrenci bulunamadı');
+      return;
+    }
+    this.reportSelectedOgrenciId = aktif.id;
+    this.renderReport();
+    this.showToast(`${aktif.ad} ${aktif.soyad} rapora yüklendi`);
+  },
+
+  getThisWeekDateRangeStr() {
+    const now = new Date();
+    const day = now.getDay();
+    const diffToMonday = (day === 0 ? -6 : 1) - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const mStr = monday.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
+    const sStr = sunday.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+    return `${mStr} – ${sStr}`;
+  },
+
+  renderReport() {
+    const container = document.getElementById('view-report');
+    if (!container) return;
+
+    const allStudents = Store.getOgrenciler();
+    if (!this.reportSelectedOgrenciId) {
+      this.reportSelectedOgrenciId = Store.data.aktifOgrenciId || (allStudents[0] ? allStudents[0].id : '');
+    }
+
+    const ogr = Store.getOgrenci(this.reportSelectedOgrenciId);
+    const isSlip = this.reportAktifSablon === 'slip';
+
+    let html = `
+      <div class="p-6 max-w-7xl mx-auto space-y-6">
+        <!-- Bölüm 1: Araç Çubuğu -->
+        <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 p-4 rounded-[var(--radius-lg)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] shadow-sm">
+          <!-- Sol Kısım: Şablon Seçici & Öğrenci Seçici -->
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="flex items-center p-1 bg-[var(--color-paper-3)] rounded-[var(--radius-md)] border border-[var(--color-rule)]">
+              <button onclick="App.setReportSablon('slip')" class="px-3 py-1.5 rounded-[var(--radius-sm)] text-xs font-semibold transition-all ${isSlip ? 'bg-[var(--color-paper-1)] text-[var(--color-ink)] shadow-xs border border-[var(--color-rule-strong)]' : 'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'}">
+                <i data-lucide="clipboard-list" class="w-3.5 h-3.5 inline-block mr-1.5"></i>Haftalık Ödev Fişi
+              </button>
+              <button onclick="App.setReportSablon('full')" class="px-3 py-1.5 rounded-[var(--radius-sm)] text-xs font-semibold transition-all ${!isSlip ? 'bg-[var(--color-paper-1)] text-[var(--color-ink)] shadow-xs border border-[var(--color-rule-strong)]' : 'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'}">
+                <i data-lucide="graduation-cap" class="w-3.5 h-3.5 inline-block mr-1.5"></i>Akademik Karne
+              </button>
+            </div>
+
+            <div class="h-6 w-px bg-[var(--color-rule)] hidden sm:block"></div>
+
+            <div class="flex items-center gap-2">
+              <label for="report-ogrenci-select" class="text-xs font-medium text-[var(--color-ink-muted)] hidden sm:inline">Öğrenci:</label>
+              <select id="report-ogrenci-select" onchange="App.onReportOgrenciChange(this.value)" class="select-instrument text-xs py-1.5 px-3 min-w-[180px]">
+                ${allStudents.length === 0 ? '<option value="">Öğrenci Kaydı Yok</option>' : ''}
+                ${allStudents.map(o => `
+                  <option value="${o.id}" ${String(o.id) === String(this.reportSelectedOgrenciId) ? 'selected' : ''}>
+                    ${o.ad} ${o.soyad} (${o.sinif ? o.sinif + '. Sınıf' : 'Öğrenci'})
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+          </div>
+
+          <!-- Sağ Kısım: Doldur & Yazdır -->
+          <div class="flex items-center gap-2.5">
+            <button onclick="App.fillReportAktifOgrenci()" class="btn-tactile btn-tactile-ghost text-xs py-1.5 px-3" title="Üst panelde seçili aktif öğrenciyi rapora getirir">
+              <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+              <span>Aktif Öğrenciyi Doldur</span>
+            </button>
+            <button onclick="App.printAktifRapor()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-4 shadow-sm">
+              <i data-lucide="printer" class="w-4 h-4"></i>
+              <span>Yazdır (A4)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bölüm 2: Rapor Önizleme Alanı -->
+        <div class="flex justify-center pb-12">
+    `;
+
+    if (!ogr) {
+      html += `
+          <div class="w-full max-w-[850px] p-12 text-center bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-lg)] space-y-4">
+            <i data-lucide="file-question" class="w-12 h-12 text-[var(--color-ink-faint)] mx-auto"></i>
+            <h3 class="font-display font-bold text-lg text-[var(--color-ink)]">Önizlenecek Öğrenci Bulunamadı</h3>
+            <p class="text-sm text-[var(--color-ink-muted)]">Rapor oluşturmak için lütfen yukarıdan bir öğrenci seçin veya yeni öğrenci kaydı ekleyin.</p>
+          </div>
+        </div>
+      </div>`;
+    } else {
+      const reportHtml = isSlip ? this.renderReportSlipHTML(ogr) : this.renderReportFullHTML(ogr);
+      html += `
+          <div id="report-preview-area" class="w-full max-w-[850px] bg-white text-slate-900 border border-slate-300 shadow-2xl rounded-sm p-8 sm:p-10 font-sans print:shadow-none print:p-0 print:border-none print:max-w-none print:w-full">
+            ${reportHtml}
+          </div>
+        </div>
+      </div>`;
+    }
+
+    container.innerHTML = html;
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  },
+
+  renderReportSlipHTML(ogr) {
+    const koc = Store.getKocProfili() || {};
+    const kocAd = (koc.ad || 'Eğitim') + ' ' + (koc.soyad || 'Koçu');
+    const kocUnvan = koc.unvan || 'Eğitim Koçu';
+    const kocKurum = koc.kurum ? ` · ${koc.kurum}` : '';
+
+    const modul = Store.getModulForOgrenci(ogr);
+    const modulAd = modul ? modul.ad : (ogr.modulId || 'Müfredat');
+    const tarihAraligi = this.getThisWeekDateRangeStr();
+
+    const gorevler = Store.getAktifGorevler(ogr.id);
+
+    return `
+      <div class="space-y-6 text-slate-900 leading-normal" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <!-- Üst Başlık Bandı -->
+        <div class="flex items-start justify-between border-b-2 border-slate-900 pb-4">
+          <div class="space-y-0.5">
+            <div class="font-bold text-base text-slate-900 tracking-tight">${kocAd}</div>
+            <div class="text-xs text-slate-600">${kocUnvan}${kocKurum}</div>
+          </div>
+          <div class="text-center">
+            <h1 class="font-black text-lg sm:text-xl tracking-tight uppercase text-slate-900">HAFTALIK ÇALIŞMA & ÖDEV FİŞİ</h1>
+            <span class="inline-block px-2.5 py-0.5 mt-1 text-[11px] font-semibold bg-slate-100 text-slate-800 rounded border border-slate-300">Haftalık Plan</span>
+          </div>
+          <div class="text-right space-y-0.5">
+            <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Dönem / Hafta</div>
+            <div class="text-xs font-bold text-slate-900">${tarihAraligi}</div>
+          </div>
+        </div>
+
+        <!-- Öğrenci Bilgi Bandı -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 p-3.5 bg-slate-50 rounded border border-slate-200 text-xs">
+          <div>
+            <span class="text-slate-500 block text-[10px] uppercase font-bold">Öğrenci Adı Soyadı</span>
+            <span class="font-bold text-slate-900 text-sm">${ogr.ad} ${ogr.soyad}</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[10px] uppercase font-bold">Sınıf / Kademesi</span>
+            <span class="font-semibold text-slate-900">${ogr.sinif ? ogr.sinif + '. Sınıf' : '—'}</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[10px] uppercase font-bold">Okul</span>
+            <span class="font-semibold text-slate-900 truncate block" title="${ogr.okul || '—'}">${ogr.okul || '—'}</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[10px] uppercase font-bold">Modül</span>
+            <span class="font-bold text-slate-900">${modulAd}</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[10px] uppercase font-bold">Hedef</span>
+            <span class="font-semibold text-slate-900 truncate block" title="${ogr.hedef || '—'}">${ogr.hedef || '—'}</span>
+          </div>
+        </div>
+
+        <!-- Aktif Ödevler Tablosu -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-800">Bu Haftanın Görev & Soru Hedefleri (${gorevler.length} Görev)</h2>
+            <span class="text-[10px] text-slate-500 italic">Tamamlanan görevlerin kutucuğunu işaretleyiniz</span>
+          </div>
+          <table class="w-full text-left border-collapse text-xs border border-slate-300">
+            <thead>
+              <tr class="bg-slate-100 text-slate-700 border-b border-slate-300 font-bold text-[11px]">
+                <th class="p-2 border-r border-slate-300 w-28">Ders</th>
+                <th class="p-2 border-r border-slate-300">Konu</th>
+                <th class="p-2 border-r border-slate-300">Görev / Kaynak</th>
+                <th class="p-2 border-r border-slate-300 text-center w-20">Hedef Soru</th>
+                <th class="p-2 border-r border-slate-300 text-center w-16">Süre</th>
+                <th class="p-2 border-r border-slate-300 text-center w-24">Teslim</th>
+                <th class="p-2 text-center w-16">Durum</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${gorevler.length === 0 ? `
+                <tr>
+                  <td colspan="7" class="p-8 text-center text-slate-500 italic bg-white">
+                    Bu hafta için tanımlanmış aktif ödev veya çalışma görevi bulunmuyor.
+                  </td>
+                </tr>
+              ` : gorevler.map((g, idx) => {
+                const ders = Store.getDers(g.dersId);
+                const konu = Store.getKonu(g.konuId);
+                const kaynak = (Store.data.kaynaklar || []).find(k => k.id === g.kaynakId);
+                const dersAd = ders ? ders.ad : 'Genel';
+                const konuAd = konu ? konu.konuAdi : (g.baslik || '—');
+                const kaynakAd = kaynak ? kaynak.ad : (g.kaynakId ? g.kaynakId : 'Bireysel Çalışma');
+                const bgClass = idx % 2 === 1 ? 'bg-slate-50/70' : 'bg-white';
+
+                return `
+                  <tr class="border-b border-slate-200 ${bgClass}">
+                    <td class="p-2 border-r border-slate-300 font-bold text-slate-900">${dersAd}</td>
+                    <td class="p-2 border-r border-slate-300 text-slate-800 font-medium">${konuAd}</td>
+                    <td class="p-2 border-r border-slate-300 text-slate-700">${kaynakAd}</td>
+                    <td class="p-2 border-r border-slate-300 text-center font-mono font-bold text-slate-900">${g.hedefSoru ? g.hedefSoru + ' Soru' : '—'}</td>
+                    <td class="p-2 border-r border-slate-300 text-center font-mono text-slate-700">${g.sureDk ? g.sureDk + ' dk' : '—'}</td>
+                    <td class="p-2 border-r border-slate-300 text-center font-mono text-slate-700">${App.formatDate(g.deadline)}</td>
+                    <td class="p-2 text-center">
+                      <div style="width:16px; height:16px; border:1.5px solid #475569; border-radius:3px; margin:0 auto; background:#ffffff;"></div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Koçun Notu & Direktif -->
+        <div class="space-y-1.5 p-3.5 bg-slate-50 rounded border border-slate-200">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-slate-700 flex items-center justify-between">
+            <span>Koçun Notu & Haftalık Direktif</span>
+            <span class="text-[10px] text-slate-500 font-normal italic">Öğrenciye özel çalışma tavsiyeleri</span>
+          </div>
+          <div class="text-xs text-slate-800 min-h-[50px] leading-relaxed whitespace-pre-wrap ${ogr.kocNotu ? 'font-medium' : 'text-slate-400 italic'}">
+            ${ogr.kocNotu || 'Bu hafta konu tekrarları ve günlük soru hedeflerine titizlikle uyulması hedeflenmektedir. Çözülemeyen sorular Hata Defterine işlenecektir.'}
+          </div>
+        </div>
+
+        <!-- Alt İmza Bandı -->
+        <div class="pt-6 border-t border-slate-300 grid grid-cols-2 gap-8 text-xs text-slate-700">
+          <div class="space-y-8">
+            <div class="font-semibold">Öğrenci / Veli Onayı:</div>
+            <div class="border-b border-dashed border-slate-400 w-48"></div>
+          </div>
+          <div class="space-y-8 text-right">
+            <div class="font-semibold">Eğitim Koçu: <span class="font-bold text-slate-900">${kocAd}</span></div>
+            <div class="border-b border-dashed border-slate-400 w-48 ml-auto"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  renderReportFullHTML(ogr) {
+    const koc = Store.getKocProfili() || {};
+    const kocAd = (koc.ad || 'Eğitim') + ' ' + (koc.soyad || 'Koçu');
+    const kocUnvan = koc.unvan || 'Eğitim Koçu';
+    const kocKurum = koc.kurum ? ` · ${koc.kurum}` : '';
+
+    const modul = Store.getModulForOgrenci(ogr);
+    const modulAd = modul ? modul.ad : (ogr.modulId || 'Müfredat');
+    const bugunTarih = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    // KPI Hesaplamaları
+    const allGorevler = Store.getGorevler(ogr.id);
+    const tamamlananGorevler = allGorevler.filter(g => g.durum === 'tamamlandi');
+    const gecikmisGorevler = Store.getGecikmisGorevler(ogr.id);
+    const tamamlamaYuzde = allGorevler.length > 0 ? Math.round((tamamlananGorevler.length / allGorevler.length) * 100) : 0;
+
+    // Ders bazlı ilerleme
+    const dersler = Store.getDerslerForOgrenci(ogr);
+    const dersRaporlari = dersler.map(d => {
+      const konular = Store.getKonularForDers(d.id);
+      const totalKonu = konular.length;
+      let tamamCount = 0;
+      let tekrarCount = 0;
+
+      konular.forEach(k => {
+        const kd = Store.getKonuDurumu(ogr.id, k.id);
+        if (kd.durum === 'tamam') tamamCount++;
+        else if (kd.durum === 'tekrar_lazim') tekrarCount++;
+      });
+
+      const yuzde = totalKonu > 0 ? Math.round((tamamCount / totalKonu) * 100) : 0;
+      const notlar = Store.getSinifNotlari(ogr.id, d.id);
+      const sonNotObj = notlar.length > 0 ? notlar[notlar.length - 1] : null;
+      const sonNot = sonNotObj ? `${sonNotObj.not}` : '—';
+
+      return {
+        ders: d,
+        totalKonu,
+        tamamCount,
+        tekrarCount,
+        yuzde,
+        sonNot
+      };
+    });
+
+    // Kritik Eksik Konular
+    const kritikKonular = [];
+    dersler.forEach(d => {
+      const konular = Store.getKonularForDers(d.id);
+      konular.forEach(k => {
+        const kd = Store.getKonuDurumu(ogr.id, k.id);
+        if (kd.durum === 'tekrar_lazim') {
+          kritikKonular.push({ dersAd: d.ad, konuAd: k.konuAdi, not: kd.not });
+        }
+      });
+    });
+
+    return `
+      <div class="space-y-6 text-slate-900 leading-normal" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <!-- Üst Kısım — Başlık & Koç Bilgisi -->
+        <div class="flex items-start justify-between border-b-2 border-slate-900 pb-4">
+          <div class="space-y-1">
+            <h1 class="font-black text-xl sm:text-2xl tracking-tight uppercase text-slate-900">AKADEMİK TAKİP & PERFORMANS RAPORU</h1>
+            <div class="text-xs font-semibold text-slate-600">Rapor Tarihi: <span class="text-slate-900">${bugunTarih}</span></div>
+          </div>
+          <div class="text-right space-y-0.5">
+            <div class="font-bold text-sm text-slate-900">${kocAd}</div>
+            <div class="text-xs text-slate-600">${kocUnvan}${kocKurum}</div>
+          </div>
+        </div>
+
+        <!-- Öğrenci Profil Bandı -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 p-3.5 bg-slate-50 rounded border border-slate-200 text-xs">
+          <div>
+            <span class="text-slate-500 block text-[10px] uppercase font-bold">Öğrenci Adı Soyadı</span>
+            <span class="font-bold text-slate-900 text-sm">${ogr.ad} ${ogr.soyad}</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[10px] uppercase font-bold">Sınıf / Şube</span>
+            <span class="font-semibold text-slate-900">${ogr.sinif ? ogr.sinif + '. Sınıf' : '—'}</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[10px] uppercase font-bold">Okul</span>
+            <span class="font-semibold text-slate-900 truncate block">${ogr.okul || '—'}</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[10px] uppercase font-bold">Modül</span>
+            <span class="font-bold text-slate-900">${modulAd}</span>
+          </div>
+          <div>
+            <span class="text-slate-500 block text-[10px] uppercase font-bold">Akademik Hedef</span>
+            <span class="font-semibold text-slate-900 truncate block">${ogr.hedef || '—'}</span>
+          </div>
+        </div>
+
+        <!-- 4 KPI Kutusu (Yatay Sıra) -->
+        <div class="grid grid-cols-4 gap-3 text-center">
+          <div class="p-3 bg-slate-50 rounded border border-slate-200">
+            <span class="block text-[10px] font-bold uppercase text-slate-500">Toplam Görev</span>
+            <span class="font-mono font-black text-xl text-slate-900">${allGorevler.length}</span>
+          </div>
+          <div class="p-3 bg-slate-50 rounded border border-slate-200">
+            <span class="block text-[10px] font-bold uppercase text-slate-500">Tamamlanan</span>
+            <span class="font-mono font-black text-xl text-emerald-700">${tamamlananGorevler.length}</span>
+          </div>
+          <div class="p-3 bg-slate-50 rounded border border-slate-200">
+            <span class="block text-[10px] font-bold uppercase text-slate-500">Tamamlama Oranı</span>
+            <span class="font-mono font-black text-xl text-blue-700">%${tamamlamaYuzde}</span>
+          </div>
+          <div class="p-3 bg-slate-50 rounded border border-slate-200">
+            <span class="block text-[10px] font-bold uppercase text-slate-500">Geciken Görev</span>
+            <span class="font-mono font-black text-xl ${gecikmisGorevler.length > 0 ? 'text-rose-700' : 'text-slate-700'}">${gecikmisGorevler.length}</span>
+          </div>
+        </div>
+
+        <!-- Ders Bazlı İlerleme Tablosu -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-800">Ders Bazlı Müfredat İlerleme Durumu</h2>
+            <span class="text-[10px] text-slate-500 font-semibold">Toplam ${dersler.length} Ders</span>
+          </div>
+          <table class="w-full text-left border-collapse text-xs border border-slate-300">
+            <thead>
+              <tr class="bg-slate-100 text-slate-700 border-b border-slate-300 font-bold text-[11px]">
+                <th class="p-2 border-r border-slate-300">Ders</th>
+                <th class="p-2 border-r border-slate-300 text-center w-24">Toplam Konu</th>
+                <th class="p-2 border-r border-slate-300 text-center w-24">Tamamlanan</th>
+                <th class="p-2 border-r border-slate-300 text-center w-24">Tekrar Lazım</th>
+                <th class="p-2 border-r border-slate-300 w-36">İlerleme</th>
+                <th class="p-2 text-center w-20">Son Not</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${dersRaporlari.length === 0 ? `
+                <tr><td colspan="6" class="p-6 text-center text-slate-500 italic bg-white">Öğrencinin kayıtlı dersi bulunmuyor.</td></tr>
+              ` : dersRaporlari.map((r, idx) => {
+                const bg = idx % 2 === 1 ? 'bg-slate-50/70' : 'bg-white';
+                return `
+                  <tr class="border-b border-slate-200 ${bg}">
+                    <td class="p-2 border-r border-slate-300 font-bold text-slate-900">${r.ders.ad}</td>
+                    <td class="p-2 border-r border-slate-300 text-center font-mono">${r.totalKonu}</td>
+                    <td class="p-2 border-r border-slate-300 text-center font-mono font-bold text-emerald-700">${r.tamamCount}</td>
+                    <td class="p-2 border-r border-slate-300 text-center font-mono font-bold ${r.tekrarCount > 0 ? 'text-rose-600' : 'text-slate-400'}">${r.tekrarCount}</td>
+                    <td class="p-2 border-r border-slate-300">
+                      <div class="flex items-center gap-2">
+                        <div class="flex-1 h-2 bg-slate-200 rounded overflow-hidden">
+                          <div class="h-full bg-blue-600" style="width: ${r.yuzde}%"></div>
+                        </div>
+                        <span class="font-mono font-bold text-[11px] text-slate-800 w-8 text-right">%${r.yuzde}</span>
+                      </div>
+                    </td>
+                    <td class="p-2 text-center font-mono font-bold text-slate-900">${r.sonNot}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 2 Sütunlu Alt Panel: Kritik Eksikler + Gecikmiş Ödevler & Koç Değerlendirmesi -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- Sol Kısım: Kritik Eksikler & Gecikmişler -->
+          <div class="space-y-4">
+            <!-- Kritik Eksik Konular -->
+            <div class="p-3 bg-rose-50/60 border border-rose-200 rounded text-xs">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-rose-800 block mb-2">Kritik Eksik Konular (Tekrar Lazım)</span>
+              ${kritikKonular.length === 0 ? `
+                <div class="text-slate-500 italic">Tekrar gerektiren kritik eksik konu bulunmuyor.</div>
+              ` : `
+                <ul class="space-y-1">
+                  ${kritikKonular.map(k => `
+                    <li class="flex items-start gap-1.5 text-slate-800">
+                      <span class="text-rose-600 font-bold">•</span>
+                      <span><strong>${k.dersAd}:</strong> ${k.konuAd}</span>
+                    </li>
+                  `).join('')}
+                </ul>
+              `}
+            </div>
+
+            <!-- Gecikmiş Ödevler -->
+            <div class="p-3 bg-slate-50 border border-slate-200 rounded text-xs">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-slate-800 block mb-2">Gecikmiş Ödevler & Takip</span>
+              ${gecikmisGorevler.length === 0 ? `
+                <div class="text-emerald-700 font-medium">Harika! Gecikmiş ödev bulunmamaktadır.</div>
+              ` : `
+                <ul class="space-y-1">
+                  ${gecikmisGorevler.slice(0, 4).map(g => {
+                    const d = Store.getDers(g.dersId);
+                    return `
+                      <li class="flex items-center justify-between text-slate-800 text-[11px]">
+                        <span><strong class="text-slate-900">${d ? d.ad : 'Ödev'}:</strong> ${g.baslik}</span>
+                        <span class="text-rose-600 font-mono font-bold text-[10px]">Gecikti (${App.formatDate(g.deadline)})</span>
+                      </li>
+                    `;
+                  }).join('')}
+                </ul>
+              `}
+            </div>
+          </div>
+
+          <!-- Sağ Kısım: Koçun Genel Değerlendirmesi -->
+          <div class="p-3.5 bg-slate-50 rounded border border-slate-200 flex flex-col justify-between text-xs">
+            <div class="space-y-2">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-slate-800 block">Koçun Genel Değerlendirmesi</span>
+              <div class="text-slate-800 leading-relaxed whitespace-pre-wrap ${ogr.kocNotu ? 'font-medium' : 'text-slate-400 italic'}">
+                ${ogr.kocNotu || 'Öğrencinin haftalık çalışma performansı ve konu anlama düzeyleri düzenli takip edilmektedir. Soru çözümlerinde hız ve dikkat unsurlarına odaklanılacaktır.'}
+              </div>
+            </div>
+            <div class="pt-4 border-t border-slate-200 text-[11px] text-slate-500 italic">
+              * Bu rapor öğrencinin bireysel gelişim takibi amacıyla eğitim koçu tarafından hazırlanmıştır.
+            </div>
+          </div>
+        </div>
+
+        <!-- En Alt — İmza Bandı -->
+        <div class="pt-6 border-t border-slate-300 grid grid-cols-2 gap-8 text-xs text-slate-700">
+          <div class="p-3 bg-slate-50 rounded border border-slate-200 space-y-4">
+            <div class="font-bold text-slate-800">Veli Bilgilendirme ve Onay:</div>
+            <div class="text-[10px] text-slate-500">Rapor incelenmiş olup öğrencinin çalışma planı onaylanmıştır.</div>
+            <div class="border-b border-dashed border-slate-400 w-40 pt-4"></div>
+          </div>
+          <div class="p-3 bg-slate-50 rounded border border-slate-200 space-y-4 text-right">
+            <div class="font-bold text-slate-800">Koç Onayı: <span class="text-slate-900">${kocAd}</span></div>
+            <div class="text-[10px] text-slate-500">${kocUnvan}</div>
+            <div class="border-b border-dashed border-slate-400 w-40 ml-auto pt-4"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  printAktifRapor() {
+    const ogrenciSelect = document.getElementById('report-ogrenci-select');
+    const ogrenciId = ogrenciSelect ? ogrenciSelect.value : (this.reportSelectedOgrenciId || Store.data.aktifOgrenciId);
+    const ogr = Store.getOgrenci(ogrenciId);
+    if (!ogr) {
+      this.showToast('Lütfen önce bir öğrenci seçin');
+      return;
+    }
+
+    const isSlip = this.reportAktifSablon === 'slip';
+    const icerik = isSlip ? this.renderReportSlipHTML(ogr) : this.renderReportFullHTML(ogr);
+
+    const bugunStr = new Date().toISOString().split('T')[0];
+    const safeName = `${ogr.ad}_${ogr.soyad}`.replace(/\s+/g, '_');
+    const dosyaAdi = isSlip ? `HaftalikFis_${safeName}_${bugunStr}` : `AkademikKarne_${safeName}_${bugunStr}`;
+
+    this.showToast(`Yazdırma başlatılıyor: ${dosyaAdi}`);
+    PrintEngine.yazdir(icerik, { yatay: false });
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // VIEW 6: HATA DEFTERİ & TELAFİ (renderHataDefteri)
+  // ─────────────────────────────────────────────────────────────
+  setHataSekme(sekme) {
+    this.hataAktifSekme = sekme;
+    this.renderHataDefteri();
+  },
+
+  setHataFormModu(mod) {
+    this.hataFormModu = mod;
+    this.renderHataDefteri();
+  },
+
+  setHataSatirSayisi(sayi) {
+    this.hataSatirSayisi = Number(sayi) || 15;
+    this.renderHataDefteri();
+  },
+
+  onHataOgrenciChange(ogrId) {
+    this.hataSelectedOgrenciId = ogrId;
+    this.renderHataDefteri();
+  },
+
+  fillHataAktifOgrenci() {
+    const aktif = Store.getAktifOgrenci();
+    if (!aktif) {
+      this.showToast('Aktif öğrenci bulunamadı');
+      return;
+    }
+    this.hataSelectedOgrenciId = aktif.id;
+    this.renderHataDefteri();
+    this.showToast(`${aktif.ad} ${aktif.soyad} hata defterine yüklendi`);
+  },
+
+  renderHataDefteri() {
+    const container = document.getElementById('view-hata-defteri');
+    if (!container) return;
+
+    const allStudents = Store.getOgrenciler();
+    if (!this.hataSelectedOgrenciId) {
+      this.hataSelectedOgrenciId = Store.data.aktifOgrenciId || (allStudents[0] ? allStudents[0].id : '');
+    }
+
+    const ogr = Store.getOgrenci(this.hataSelectedOgrenciId);
+    const isA4 = this.hataAktifSekme === 'a4';
+
+    let html = `
+      <div class="p-6 max-w-7xl mx-auto space-y-6">
+        <!-- Bölüm 1: Araç Çubuğu -->
+        <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 p-4 rounded-[var(--radius-lg)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] shadow-sm">
+          <!-- Sol Kısım: Sekme Seçici & Öğrenci Seçici -->
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="flex items-center p-1 bg-[var(--color-paper-3)] rounded-[var(--radius-md)] border border-[var(--color-rule)]">
+              <button onclick="App.setHataSekme('a4')" class="px-3 py-1.5 rounded-[var(--radius-sm)] text-xs font-semibold transition-all ${isA4 ? 'bg-[var(--color-paper-1)] text-[var(--color-ink)] shadow-xs border border-[var(--color-rule-strong)]' : 'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'}">
+                <i data-lucide="printer" class="w-3.5 h-3.5 inline-block mr-1.5"></i>A4 Form
+              </button>
+              <button onclick="App.setHataSekme('dijital')" class="px-3 py-1.5 rounded-[var(--radius-sm)] text-xs font-semibold transition-all ${!isA4 ? 'bg-[var(--color-paper-1)] text-[var(--color-ink)] shadow-xs border border-[var(--color-rule-strong)]' : 'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'}">
+                <i data-lucide="layers" class="w-3.5 h-3.5 inline-block mr-1.5"></i>Dijital Havuz
+              </button>
+            </div>
+
+            <div class="h-6 w-px bg-[var(--color-rule)] hidden sm:block"></div>
+
+            <div class="flex items-center gap-2">
+              <label for="hata-ogrenci-select" class="text-xs font-medium text-[var(--color-ink-muted)] hidden sm:inline">Öğrenci:</label>
+              <select id="hata-ogrenci-select" onchange="App.onHataOgrenciChange(this.value)" class="select-instrument text-xs py-1.5 px-3 min-w-[180px]">
+                ${allStudents.length === 0 ? '<option value="">Öğrenci Kaydı Yok</option>' : ''}
+                ${allStudents.map(o => `
+                  <option value="${o.id}" ${String(o.id) === String(this.hataSelectedOgrenciId) ? 'selected' : ''}>
+                    ${o.ad} ${o.soyad} (${o.sinif ? o.sinif + '. Sınıf' : 'Öğrenci'})
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+          </div>
+
+          <!-- Sağ Kısım: Butonlar -->
+          <div class="flex items-center gap-2.5">
+            <button onclick="App.fillHataAktifOgrenci()" class="btn-tactile btn-tactile-ghost text-xs py-1.5 px-3" title="Üst panelde seçili aktif öğrenciyi getirir">
+              <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+              <span>Aktif Öğrenciyi Doldur</span>
+            </button>
+            ${isA4 ? `
+              <button onclick="App.printHataA4()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-4 shadow-sm">
+                <i data-lucide="printer" class="w-4 h-4"></i>
+                <span>Yazdır (A4 Yatay)</span>
+              </button>
+            ` : `
+              <button onclick="App.openHataModal()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-3.5 shadow-sm">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>Hata Ekle</span>
+              </button>
+            `}
+          </div>
+        </div>
+    `;
+
+    if (!ogr) {
+      html += `
+        <div class="p-12 text-center bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-lg)] space-y-4">
+          <i data-lucide="file-question" class="w-12 h-12 text-[var(--color-ink-faint)] mx-auto"></i>
+          <h3 class="font-display font-bold text-lg text-[var(--color-ink)]">Öğrenci Seçilmedi</h3>
+          <p class="text-sm text-[var(--color-ink-muted)]">Hata kayıtlarını görüntülemek için lütfen yukarıdan bir öğrenci seçin.</p>
+        </div>
+      </div>`;
+    } else {
+      if (isA4) {
+        html += this.renderHataA4(ogr);
+      } else {
+        html += this.renderHataDijital(ogr);
+      }
+      html += `</div>`;
+    }
+
+    container.innerHTML = html;
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  },
+
+  renderHataA4(ogr) {
+    const htmlA4 = this.renderHataA4HTML(ogr);
+
+    return `
+      <!-- A4 Form Ayarları & Önizleme -->
+      <div class="space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 p-3 bg-[var(--color-paper-3)] border border-[var(--color-rule)] rounded-[var(--radius-md)] text-xs">
+          <div class="flex items-center gap-2">
+            <span class="text-[var(--color-ink-muted)] font-medium">Veri Modu:</span>
+            <div class="flex items-center bg-[var(--color-paper-2)] p-0.5 rounded-[var(--radius-xs)] border border-[var(--color-rule)]">
+              <button onclick="App.setHataFormModu('dolu')" class="px-2.5 py-1 rounded-[var(--radius-xs)] font-semibold transition-all ${this.hataFormModu === 'dolu' ? 'bg-[var(--color-accent)] text-white' : 'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'}">
+                Dolu (Kayıtlı Hatalar)
+              </button>
+              <button onclick="App.setHataFormModu('bos')" class="px-2.5 py-1 rounded-[var(--radius-xs)] font-semibold transition-all ${this.hataFormModu === 'bos' ? 'bg-[var(--color-accent)] text-white' : 'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'}">
+                Boş Şablon (Elle Yazım)
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="text-[var(--color-ink-muted)] font-medium">Satır Sayısı:</span>
+            <div class="flex items-center gap-1">
+              ${[10, 15, 20].map(cnt => `
+                <button onclick="App.setHataSatirSayisi(${cnt})" class="px-2.5 py-1 rounded-[var(--radius-xs)] font-mono font-semibold transition-all ${this.hataSatirSayisi === cnt ? 'bg-[var(--color-paper-1)] text-[var(--color-ink)] border border-[var(--color-rule-strong)] shadow-xs' : 'text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] bg-[var(--color-paper-2)] border border-[var(--color-rule)]'}">
+                  ${cnt}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto flex justify-center pb-8">
+          <div id="hata-a4-preview-area" class="w-full max-w-[1050px] bg-white text-slate-900 border border-slate-300 shadow-2xl rounded-sm p-8 sm:p-10 font-sans print:shadow-none print:p-0 print:border-none print:max-w-none print:w-full">
+            ${htmlA4}
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  renderHataA4HTML(ogr) {
+    const bugunTarih = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+    const modul = Store.getModulForOgrenci(ogr);
+    const modulAd = modul ? modul.ad : (ogr.modulId || '');
+
+    const hatalar = this.hataFormModu === 'dolu' ? Store.getHatalar(ogr.id) : [];
+    const satirSayisi = this.hataSatirSayisi || 15;
+
+    const rows = [];
+    for (let i = 0; i < satirSayisi; i++) {
+      const h = hatalar[i];
+      if (h) {
+        const ders = Store.getDers(h.dersId);
+        const konu = Store.getKonu(h.konuId);
+        rows.push({
+          no: i + 1,
+          ders: ders ? ders.ad : '—',
+          konu: konu ? konu.konuAdi : '—',
+          tur: h.hataTuru || 'Bilgi Eksikliği',
+          aciklama: h.aciklama || '—',
+          telafiTarihi: h.tekrarTarihi ? App.formatDate(h.tekrarTarihi) : '—',
+          telafiEdildi: h.telafiDurumu
+        });
+      } else {
+        rows.push({
+          no: i + 1,
+          ders: '',
+          konu: '',
+          tur: '',
+          aciklama: '',
+          telafiTarihi: '',
+          telafiEdildi: false
+        });
+      }
+    }
+
+    return `
+      <div class="space-y-5 text-slate-900 leading-normal" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <!-- Üst Başlık Bandı (Yatay A4) -->
+        <div class="flex items-center justify-between border-b-2 border-slate-900 pb-3">
+          <div>
+            <h1 class="font-black text-xl tracking-tight uppercase text-slate-900">HATA DEFTERİ & TELAFİ FORMU</h1>
+            <p class="text-xs text-slate-600">Öğrenci Yanlış Soru ve Telafi Takip Çizelgesi (1-3-7 Gün Döngüsü)</p>
+          </div>
+          <div class="flex items-center gap-6 text-xs">
+            <div>
+              <span class="text-slate-500 block text-[10px] uppercase font-bold">Öğrenci:</span>
+              <span class="font-bold text-slate-900 text-sm">${ogr.ad} ${ogr.soyad}</span>
+            </div>
+            <div>
+              <span class="text-slate-500 block text-[10px] uppercase font-bold">Sınıf & Modül:</span>
+              <span class="font-semibold text-slate-900">${ogr.sinif ? ogr.sinif + '. Sınıf' : ''} (${modulAd})</span>
+            </div>
+            <div>
+              <span class="text-slate-500 block text-[10px] uppercase font-bold">Tarih:</span>
+              <span class="font-semibold text-slate-900">${bugunTarih}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hata Tablosu -->
+        <table class="w-full text-left border-collapse text-xs border border-slate-300">
+          <thead>
+            <tr class="bg-slate-100 text-slate-700 border-b border-slate-300 font-bold text-[11px]">
+              <th class="p-2 border-r border-slate-300 text-center w-10">#</th>
+              <th class="p-2 border-r border-slate-300 w-32">Ders</th>
+              <th class="p-2 border-r border-slate-300 w-44">Konu</th>
+              <th class="p-2 border-r border-slate-300 w-36">Hata Türü</th>
+              <th class="p-2 border-r border-slate-300">Açıklama / Yanlış Nedeni</th>
+              <th class="p-2 border-r border-slate-300 text-center w-28">Telafi Tarihi</th>
+              <th class="p-2 text-center w-24">Telafi Edildi</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr class="border-b border-slate-200 h-9">
+                <td class="p-1.5 border-r border-slate-300 text-center font-mono text-slate-500">${r.no}</td>
+                <td class="p-1.5 border-r border-slate-300 font-semibold text-slate-900">${r.ders}</td>
+                <td class="p-1.5 border-r border-slate-300 text-slate-800">${r.konu}</td>
+                <td class="p-1.5 border-r border-slate-300">
+                  ${r.tur ? `<span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 border border-slate-300 text-slate-800">${r.tur}</span>` : ''}
+                </td>
+                <td class="p-1.5 border-r border-slate-300 text-slate-700 truncate max-w-[200px]">${r.aciklama}</td>
+                <td class="p-1.5 border-r border-slate-300 text-center font-mono text-slate-700">${r.telafiTarihi}</td>
+                <td class="p-1.5 text-center">
+                  <div style="width:16px; height:16px; border:1.5px solid #475569; border-radius:3px; margin:0 auto; background:#ffffff; ${r.telafiEdildi ? 'background:#059669; color:#fff; display:flex; align-items:center; justify-content:center; font-size:11px;' : ''}">
+                    ${r.telafiEdildi ? '✓' : ''}
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <!-- Alt Kısım: Açıklama ve İmza -->
+        <div class="flex items-center justify-between text-[11px] text-slate-600 pt-2 border-t border-slate-200">
+          <div>
+            <strong>1-3-7 Gün Telafi Döngüsü:</strong> Hata ilk tespit: +1 gün sonra tekrar çöz · Doğru ise: +3 gün sonra tekrar çöz · Doğru ise: +7 gün sonra kalıcı telafi.
+          </div>
+          <div class="text-right">
+            Koç Kontrolü: ____________________
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  printHataA4() {
+    const ogr = Store.getOgrenci(this.hataSelectedOgrenciId);
+    if (!ogr) {
+      this.showToast('Lütfen önce bir öğrenci seçin');
+      return;
+    }
+
+    const html = this.renderHataA4HTML(ogr);
+    const bugunStr = new Date().toISOString().split('T')[0];
+    const safeName = `${ogr.ad}_${ogr.soyad}`.replace(/\s+/g, '_');
+    const dosyaAdi = `HataDefteri_${safeName}_${bugunStr}`;
+
+    this.showToast(`Yazdırma başlatılıyor: ${dosyaAdi}`);
+    PrintEngine.yazdir(html, { yatay: true });
+  },
+
+  renderHataDijital(ogr) {
+    const allHatalar = Store.getHatalar(ogr.id);
+    const dersler = Store.getDerslerForOgrenci(ogr);
+
+    // Filtreleme
+    const filtered = allHatalar.filter(h => {
+      if (this.hataDersFilter && String(h.dersId) !== String(this.hataDersFilter)) return false;
+      if (this.hataTurFilter && h.hataTuru !== this.hataTurFilter) return false;
+      return true;
+    });
+
+    const bugunStr = new Date().toISOString().split('T')[0];
+
+    return `
+      <!-- Dijital Havuz İçeriği -->
+      <div class="space-y-6">
+        <!-- Filtre Araç Çubuğu -->
+        <div class="flex flex-wrap items-center justify-between gap-3 p-3 bg-[var(--color-paper-3)] border border-[var(--color-rule)] rounded-[var(--radius-md)] text-xs">
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[var(--color-ink-muted)] font-medium">Ders:</span>
+              <select onchange="App.hataDersFilter = this.value; App.renderHataDefteri();" class="select-instrument text-xs py-1 px-2.5">
+                <option value="">Tüm Dersler</option>
+                ${dersler.map(d => `<option value="${d.id}" ${this.hataDersFilter === d.id ? 'selected' : ''}>${d.ad}</option>`).join('')}
+              </select>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <span class="text-[var(--color-ink-muted)] font-medium">Hata Türü:</span>
+              <select onchange="App.hataTurFilter = this.value; App.renderHataDefteri();" class="select-instrument text-xs py-1 px-2.5">
+                <option value="">Tüm Hata Türleri</option>
+                ${HATA_TURLERI.map(t => `<option value="${t.id}" ${this.hataTurFilter === t.id ? 'selected' : ''}>${t.label}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+
+          <div class="text-xs font-mono text-[var(--color-ink-muted)]">
+            Toplam: <span class="font-bold text-[var(--color-ink)]">${filtered.length}</span> Hata Kaydı
+          </div>
+        </div>
+
+        <!-- Hata Kartları Grid -->
+        ${filtered.length === 0 ? `
+          <div class="p-12 text-center bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-lg)] space-y-3">
+            <i data-lucide="check-circle-2" class="w-10 h-10 text-[var(--color-success)] mx-auto"></i>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Kayıtlı Hata Bulunamadı</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Seçili filtrelere uygun hata kaydı bulunmuyor. Yeni bir hata eklemek için yukarıdaki butonu kullanabilirsiniz.</p>
+          </div>
+        ` : `
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            ${filtered.map(h => {
+              const ders = Store.getDers(h.dersId);
+              const konu = Store.getKonu(h.konuId);
+              const asama = Number(h.asama) || 1;
+              const isDone = Boolean(h.telafiDurumu);
+              const isOverdue = !isDone && h.tekrarTarihi && h.tekrarTarihi < bugunStr;
+
+              const turObj = HATA_TURLERI.find(t => t.id === h.hataTuru) || { label: h.hataTuru, renk: 'slate' };
+
+              return `
+                <div class="card-editorial p-4 flex flex-col justify-between space-y-4 border ${isDone ? 'border-[var(--color-success-border)] bg-[var(--color-success-bg)]/20' : isOverdue ? 'border-[var(--color-danger-border)]' : 'border-[var(--color-rule)]'} transition-all">
+                  <div class="space-y-2.5">
+                    <!-- Üst Başlık: Ders & Hata Türü -->
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="meta-pill text-[10px] font-semibold bg-[var(--color-paper-3)] text-[var(--color-ink)] border-[var(--color-rule)]">
+                        ${ders ? ders.ad : 'Ders'}
+                      </span>
+                      <span class="meta-pill text-[10px] font-medium ${turObj.renk === 'rose' ? 'bg-[var(--color-danger-bg)] text-[var(--color-danger)] border-[var(--color-danger-border)]' : turObj.renk === 'amber' ? 'bg-[var(--color-warning-bg)] text-[var(--color-warning)] border-[var(--color-warning-border)]' : 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)] border-[var(--color-accent-border)]'}">
+                        ${turObj.label}
+                      </span>
+                    </div>
+
+                    <!-- Konu Adı -->
+                    <div>
+                      <h4 class="font-display font-bold text-sm text-[var(--color-ink)] leading-snug">
+                        ${konu ? konu.konuAdi : 'Genel Hata'}
+                      </h4>
+                      ${h.aciklama ? `
+                        <p class="text-xs text-[var(--color-ink-muted)] mt-1.5 leading-relaxed line-clamp-3 italic">
+                          "${h.aciklama}"
+                        </p>
+                      ` : ''}
+                    </div>
+
+                    <!-- 1-3-7 Gün Telafi Döngüsü Stepper -->
+                    <div class="pt-2">
+                      <div class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-faint)] mb-1.5 flex items-center justify-between">
+                        <span>Telafi Döngüsü</span>
+                        <span class="font-mono text-[9px] ${isDone ? 'text-[var(--color-success)] font-bold' : isOverdue ? 'text-[var(--color-danger)] font-bold' : 'text-[var(--color-ink-muted)]'}">
+                          ${isDone ? 'Tamamlandı' : isOverdue ? 'Tekrar Gecikti' : (h.tekrarTarihi ? App.formatDate(h.tekrarTarihi) : '')}
+                        </span>
+                      </div>
+                      <div class="grid grid-cols-4 gap-1 text-center">
+                        <div class="py-1 px-1 rounded-[var(--radius-xs)] text-[9px] font-mono font-semibold ${asama >= 2 || isDone ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border border-[var(--color-success-border)]' : asama === 1 ? 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)] border border-[var(--color-accent-border)] font-bold' : 'bg-[var(--color-paper-3)] text-[var(--color-ink-faint)] border border-[var(--color-rule)]'}">
+                          1. Gün
+                        </div>
+                        <div class="py-1 px-1 rounded-[var(--radius-xs)] text-[9px] font-mono font-semibold ${asama >= 3 || isDone ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border border-[var(--color-success-border)]' : asama === 2 ? 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)] border border-[var(--color-accent-border)] font-bold' : 'bg-[var(--color-paper-3)] text-[var(--color-ink-faint)] border border-[var(--color-rule)]'}">
+                          3. Gün
+                        </div>
+                        <div class="py-1 px-1 rounded-[var(--radius-xs)] text-[9px] font-mono font-semibold ${asama >= 4 || isDone ? 'bg-[var(--color-success-bg)] text-[var(--color-success)] border border-[var(--color-success-border)]' : asama === 3 ? 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)] border border-[var(--color-accent-border)] font-bold' : 'bg-[var(--color-paper-3)] text-[var(--color-ink-faint)] border border-[var(--color-rule)]'}">
+                          7. Gün
+                        </div>
+                        <div class="py-1 px-1 rounded-[var(--radius-xs)] text-[9px] font-mono font-semibold ${isDone ? 'bg-[var(--color-success)] text-white font-bold' : 'bg-[var(--color-paper-3)] text-[var(--color-ink-faint)] border border-[var(--color-rule)]'}">
+                          ✓ Bitti
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Alt İşlem Butonları -->
+                  <div class="pt-3 border-t border-[var(--color-rule)] flex items-center justify-between gap-2">
+                    <div>
+                      ${isDone ? `
+                        <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--color-success)]">
+                          <i data-lucide="check" class="w-3.5 h-3.5"></i>Telafi Edildi
+                        </span>
+                      ` : `
+                        <button onclick="Store.telafiIlerletHata('${h.id}'); App.renderHataDefteri(); App.showToast('Telafi adımı ilerletildi');" class="btn-tactile btn-tactile-ghost text-xs py-1 px-2.5 text-[var(--color-success)] hover:border-[var(--color-success-border)]">
+                          <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                          <span>Telafi Edildi</span>
+                        </button>
+                      `}
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <button onclick="App.openHataModal('${h.id}')" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-3)] transition-colors" title="Düzenle">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <button onclick="App.openConfirmModal('Hatayı Sil', 'Bu hata kaydını silmek istediğinize emin misiniz?', () => { Store.deleteHata('${h.id}'); App.renderHataDefteri(); App.showToast('Hata kaydı silindi'); });" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors" title="Sil">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `}
+      </div>
+    `;
+  },
+
+  openHataModal(hataId = null) {
+    const isEdit = Boolean(hataId);
+    const hata = isEdit ? (Store.data.hataKayitlari || []).find(h => String(h.id) === String(hataId)) : null;
+
+    const ogr = Store.getOgrenci(this.hataSelectedOgrenciId) || Store.getAktifOgrenci();
+    if (!ogr) {
+      this.showToast('Lütfen önce bir öğrenci seçin');
+      return;
+    }
+
+    const dersler = Store.getDerslerForOgrenci(ogr);
+    const seciliDersId = hata ? hata.dersId : (dersler[0] ? dersler[0].id : '');
+    const seciliKonuId = hata ? hata.konuId : '';
+
+    const html = `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
+          <div>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">${isEdit ? 'Hata Kaydını Düzenle' : 'Yeni Hata Kaydı Ekle'}</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">${ogr.ad} ${ogr.soyad} için telafi kaydı oluşturun.</p>
+          </div>
+          <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <form id="form-hata" onsubmit="event.preventDefault(); App.saveHata('${hataId || ''}');" class="space-y-3.5 text-xs">
+          <!-- Ders -->
+          <div>
+            <label class="block text-[11px] font-semibold text-[var(--color-ink)] mb-1">Ders *</label>
+            <select id="hata-input-ders" onchange="App.onHataModalDersChange(this.value)" class="select-instrument w-full text-xs py-1.5 px-3" required>
+              ${dersler.map(d => `<option value="${d.id}" ${d.id === seciliDersId ? 'selected' : ''}>${d.ad}</option>`).join('')}
+            </select>
+          </div>
+
+          <!-- Konu -->
+          <div>
+            <label class="block text-[11px] font-semibold text-[var(--color-ink)] mb-1">Konu</label>
+            <select id="hata-input-konu" class="select-instrument w-full text-xs py-1.5 px-3">
+              <!-- Dinamik olarak dolacak -->
+            </select>
+          </div>
+
+          <!-- Hata Türü -->
+          <div>
+            <label class="block text-[11px] font-semibold text-[var(--color-ink)] mb-1">Hata Türü *</label>
+            <select id="hata-input-tur" class="select-instrument w-full text-xs py-1.5 px-3" required>
+              ${HATA_TURLERI.map(t => `<option value="${t.id}" ${hata && hata.hataTuru === t.id ? 'selected' : ''}>${t.label}</option>`).join('')}
+            </select>
+          </div>
+
+          <!-- Açıklama -->
+          <div>
+            <label class="block text-[11px] font-semibold text-[var(--color-ink)] mb-1">Açıklama / Soru Notu</label>
+            <textarea id="hata-input-aciklama" class="input-editorial w-full text-xs p-2.5 h-20" placeholder="Sorunun kökünde ne kaçırıldı? Hangi formül veya bilgi eksikti?">${hata ? (hata.aciklama || '') : ''}</textarea>
+          </div>
+
+          <!-- Butonlar -->
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
+            <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost text-xs py-1.5 px-3">İptal</button>
+            <button type="submit" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-4">${isEdit ? 'Güncelle' : 'Kaydet'}</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    this.openModal(html);
+    this.onHataModalDersChange(seciliDersId, seciliKonuId);
+  },
+
+  onHataModalDersChange(dersId, seciliKonuId = '') {
+    const konuSelect = document.getElementById('hata-input-konu');
+    if (!konuSelect) return;
+
+    const konular = Store.getKonularForDers(dersId);
+    konuSelect.innerHTML = '<option value="">— Konu Seçiniz (Opsiyonel) —</option>' +
+      konular.map(k => `<option value="${k.id}" ${k.id === seciliKonuId ? 'selected' : ''}>${k.konuAdi}</option>`).join('');
+  },
+
+  saveHata(hataId = '') {
+    const ogr = Store.getOgrenci(this.hataSelectedOgrenciId) || Store.getAktifOgrenci();
+    if (!ogr) return;
+
+    const dersId = document.getElementById('hata-input-ders')?.value || '';
+    const konuId = document.getElementById('hata-input-konu')?.value || '';
+    const hataTuru = document.getElementById('hata-input-tur')?.value || 'Bilgi Eksikliği';
+    const aciklama = document.getElementById('hata-input-aciklama')?.value || '';
+
+    if (!dersId) {
+      this.showToast('Lütfen ders seçin');
+      return;
+    }
+
+    if (hataId) {
+      Store.updateHata(hataId, { dersId, konuId, hataTuru, aciklama });
+      this.showToast('Hata kaydı güncellendi');
+    } else {
+      Store.addHata({
+        ogrenciId: ogr.id,
+        dersId,
+        konuId,
+        hataTuru,
+        aciklama
+      });
+      this.showToast('Hata kaydı eklendi');
+    }
+
+    this.closeModal();
+    this.renderHataDefteri();
   },
 
   // ─────────────────────────────────────────────────────────────
