@@ -87,12 +87,13 @@ const Store = {
   // MODÜL METODLARI
   // ─────────────────────────────────────────────────────────────
   getAktifModul() {
+    if (!this.data.aktifModulId || this.data.aktifModulId === 'all' || this.data.aktifModulId === 'tumu') return null;
     if (typeof MODULLER === 'undefined' || !Array.isArray(MODULLER)) return null;
     return MODULLER.find(m => m.id === this.data.aktifModulId) || null;
   },
 
   setAktifModul(modulId) {
-    this.data.aktifModulId = modulId;
+    this.data.aktifModulId = modulId || '';
     this.save();
   },
 

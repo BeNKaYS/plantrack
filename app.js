@@ -48,6 +48,7 @@ const App = {
 
   getAktifModul() {
     const modulId = Store.data.aktifModulId;
+    if (!modulId || modulId === 'all' || modulId === 'tumu') return null;
     if (typeof MODULLER === 'undefined' || !Array.isArray(MODULLER)) return null;
     return MODULLER.find(m => m.id === modulId) || null;
   },
@@ -238,10 +239,11 @@ const App = {
     const select = document.getElementById('select-active-student');
     if (!select) return;
 
-    const ogrenciler = Store.getOgrenciler();
+    const aktifModul = this.getAktifModul();
+    const allStudents = Store.getOgrenciler();
     select.innerHTML = '';
 
-    if (ogrenciler.length === 0) {
+    if (allStudents.length === 0) {
       const opt = document.createElement('option');
       opt.value = '';
       opt.textContent = 'Öğrenci Kaydı Yok';
@@ -249,10 +251,12 @@ const App = {
     } else {
       const defaultOpt = document.createElement('option');
       defaultOpt.value = '';
-      defaultOpt.textContent = '— Öğrenci Seçiniz —';
+      defaultOpt.textContent = aktifModul ? `— ${aktifModul.ad} (${allStudents.filter(o => o.modulId === aktifModul.id).length} Öğrenci) —` : '— Öğrenci Seçiniz —';
       select.appendChild(defaultOpt);
 
-      ogrenciler.forEach(ogrenci => {
+      const modulStudents = aktifModul ? allStudents.filter(o => o.modulId === aktifModul.id) : allStudents;
+
+      modulStudents.forEach(ogrenci => {
         const opt = document.createElement('option');
         opt.value = ogrenci.id;
         const sinifStr = ogrenci.sinif ? ` (${ogrenci.sinif}. Sınıf)` : '';
@@ -262,6 +266,25 @@ const App = {
         }
         select.appendChild(opt);
       });
+
+      if (aktifModul) {
+        const otherStudents = allStudents.filter(o => o.modulId !== aktifModul.id);
+        if (otherStudents.length > 0) {
+          const group = document.createElement('optgroup');
+          group.label = 'Diğer Modüllerdeki Öğrenciler';
+          otherStudents.forEach(ogrenci => {
+            const opt = document.createElement('option');
+            opt.value = ogrenci.id;
+            const sinifStr = ogrenci.sinif ? ` (${ogrenci.sinif}. Sınıf)` : '';
+            opt.textContent = `${ogrenci.ad} ${ogrenci.soyad}${sinifStr}`;
+            if (String(ogrenci.id) === String(Store.data.aktifOgrenciId)) {
+              opt.selected = true;
+            }
+            group.appendChild(opt);
+          });
+          select.appendChild(group);
+        }
+      }
     }
 
     this.updateGlobalBadges();
@@ -404,30 +427,51 @@ const App = {
     const view = document.getElementById('view-overview');
     if (!view) return;
 
-    const ogrenciler = Store.getOgrenciler();
+    const aktifModul = this.getAktifModul();
+    const allStudents = Store.getOgrenciler();
     const allTasks = Store.getGorevler();
-    const aktifModul = this.getAktifModul() || { id: 'ara-sinif', ad: 'Ara Sınıflar' };
+
+    // Aktif modüle göre öğrenci ve görev kapsamı
+    const modulOgrenciler = aktifModul
+      ? allStudents.filter(o => o.modulId === aktifModul.id)
+      : allStudents;
+
+    const modulOgrenciIds = new Set(modulOgrenciler.map(o => String(o.id)));
+    const modulTasks = aktifModul
+      ? allTasks.filter(g => modulOgrenciIds.has(String(g.ogrenciId)))
+      : allTasks;
 
     // KPI Hesaplamaları
-    const toplamOgrenci = ogrenciler.length;
-    const aktifOdevSayisi = allTasks.filter(g => g.durum !== 'tamamlandi').length;
-    const gecikenOdevSayisi = allTasks.filter(g => g.durum === 'gecikti').length;
+    const toplamOgrenci = modulOgrenciler.length;
+    const aktifOdevSayisi = modulTasks.filter(g => g.durum !== 'tamamlandi').length;
+    const gecikenOdevSayisi = modulTasks.filter(g => g.durum === 'gecikti').length;
 
     const sevenDaysAgo = Date.now() - 7 * 24 * 3600 * 1000;
-    const buHaftaTamamlanan = allTasks.filter(g => {
+    const buHaftaTamamlanan = modulTasks.filter(g => {
       if (g.durum !== 'tamamlandi' || !g.tamamlanmaTarihi) return false;
       const t = new Date(g.tamamlanmaTarihi).getTime();
       return !isNaN(t) && t >= sevenDaysAgo;
     }).length;
 
-    // Modül ve Sınıf Filtre Seçenekleri
-    const modulOptions = (typeof MODULLER !== 'undefined' ? MODULLER : []).map(m =>
-      `<option value="${m.id}" ${this.overviewModulFilter === m.id ? 'selected' : ''}>${m.ad}</option>`
-    ).join('');
+    // Sınıf Filtre Seçenekleri: Seçili modüle ait sınıflar
+    const visibleSiniflar = (typeof SINIFLAR !== 'undefined' ? SINIFLAR : []).filter(s => {
+      if (!aktifModul) return true;
+      return s.modulId === aktifModul.id;
+    });
 
-    const sinifOptions = (typeof SINIFLAR !== 'undefined' ? SINIFLAR : []).map(s =>
+    // Eğer mevcut seçili sınıf yeni modülün sınıfları arasında yoksa sıfırla
+    if (this.overviewSinifFilter && !visibleSiniflar.some(s => s.deger === this.overviewSinifFilter)) {
+      this.overviewSinifFilter = '';
+    }
+
+    const sinifOptions = visibleSiniflar.map(s =>
       `<option value="${s.deger}" ${this.overviewSinifFilter === s.deger ? 'selected' : ''}>${s.label}</option>`
     ).join('');
+
+    const modulTitle = aktifModul ? aktifModul.ad : 'Tüm Modüller (Portföy)';
+    const modulSubtitle = aktifModul
+      ? `${aktifModul.ad} kademesindeki öğrencilerin akademik durumu ve takibi`
+      : 'Tüm kademelerdeki öğrencilerin akademik durumu ve ödev takibi';
 
     view.innerHTML = `
       <div class="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
@@ -439,12 +483,12 @@ const App = {
               <span class="text-xs font-mono text-[var(--color-ink-faint)]">Sistem Özeti</span>
             </div>
             <h1 class="text-2xl font-bold font-display tracking-tight text-[var(--color-ink)]">Kurum Geneli Yönetim Paneli</h1>
-            <p class="text-xs text-[var(--color-ink-muted)] mt-0.5">Tüm öğrencilerin akademik durumu ve ödev takibi</p>
+            <p class="text-xs text-[var(--color-ink-muted)] mt-0.5">${modulSubtitle}</p>
           </div>
           <div class="flex items-center gap-3">
-            <button onclick="App.openModulSeciciModal()" class="btn-tactile btn-tactile-ghost flex items-center gap-2" title="Aktif Modülü Değiştir">
-              <span class="w-2 h-2 rounded-full bg-[var(--color-accent)]"></span>
-              <span class="font-mono text-xs font-semibold">${aktifModul.ad}</span>
+            <button onclick="App.openModulSeciciModal()" class="btn-tactile btn-tactile-ghost flex items-center gap-2 py-2 px-3 border border-[var(--color-rule-strong)] hover:border-[var(--color-accent)]" title="Modül Filtresini Değiştir">
+              <span class="w-2.5 h-2.5 rounded-full ${aktifModul ? 'bg-[var(--color-accent)] shadow-[0_0_8px_var(--color-accent)]' : 'bg-[var(--color-ink-faint)]'}"></span>
+              <span class="font-mono text-xs font-semibold text-[var(--color-ink)]">${modulTitle}</span>
               <i data-lucide="chevrons-up-down" class="w-3.5 h-3.5 text-[var(--color-ink-faint)]"></i>
             </button>
             <button onclick="App.openOgrenciModal()" class="btn-tactile btn-tactile-primary">
@@ -462,7 +506,7 @@ const App = {
               <i data-lucide="users" class="w-4 h-4 text-[var(--color-ink-faint)]"></i>
             </div>
             <div class="workbench-metric-value">${toplamOgrenci}</div>
-            <div class="workbench-metric-sub">Kayıtlı Portföy</div>
+            <div class="workbench-metric-sub">${aktifModul ? `${aktifModul.ad} Portföyü` : 'Kayıtlı Portföy'}</div>
           </div>
 
           <div class="workbench-card">
@@ -499,19 +543,15 @@ const App = {
 
         <!-- Bölüm 3: Öğrenci Listesi Tablosu -->
         <div class="space-y-4">
-          <!-- Üst Araç Çubuğu (Arama ve Filtreler) -->
+          <!-- Üst Araç Çubuğu (Arama ve Sınıf Filtresi) -->
           <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[var(--color-paper-2)] p-3 rounded-[var(--radius-md)] border border-[var(--color-rule)]">
             <div class="relative flex-1 max-w-sm">
               <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-faint)]"></i>
               <input type="text" id="overview-search" value="${this.overviewSearchQuery}" placeholder="Öğrenci adı, soyadı veya okul ara..." class="w-full pl-9 pr-3 py-1.5 text-xs bg-[var(--color-paper-3)] border border-[var(--color-rule)] rounded-[var(--radius-sm)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)] placeholder:text-[var(--color-ink-ghost)]">
             </div>
             <div class="flex items-center gap-2">
-              <select id="overview-modul-filter" class="select-instrument text-xs py-1.5">
-                <option value="">Tüm Modüller</option>
-                ${modulOptions}
-              </select>
               <select id="overview-sinif-filter" class="select-instrument text-xs py-1.5">
-                <option value="">Tüm Sınıflar</option>
+                <option value="">${aktifModul ? `Tüm ${aktifModul.ad} Sınıfları` : 'Tüm Sınıflar'}</option>
                 ${sinifOptions}
               </select>
             </div>
@@ -545,7 +585,9 @@ const App = {
           <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
             <div class="flex items-center gap-2">
               <i data-lucide="alert-circle" class="w-4 h-4 ${gecikenOdevSayisi > 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-success)]'}"></i>
-              <h2 class="font-display font-bold text-sm text-[var(--color-ink)]">Kurum Geneli Gecikmiş Ödevler</h2>
+              <h2 class="font-display font-bold text-sm text-[var(--color-ink)]">
+                ${aktifModul ? `${aktifModul.ad} Gecikmiş Ödevler` : 'Kurum Geneli Gecikmiş Ödevler'}
+              </h2>
             </div>
             <span class="meta-pill ${gecikenOdevSayisi > 0 ? 'text-[var(--color-danger)] bg-[var(--color-danger-bg)] border-[var(--color-danger-border)]' : ''}">
               ${gecikenOdevSayisi} Geciken Ödev
@@ -571,14 +613,6 @@ const App = {
       });
     }
 
-    const modulFilter = document.getElementById('overview-modul-filter');
-    if (modulFilter) {
-      modulFilter.addEventListener('change', (e) => {
-        this.overviewModulFilter = e.target.value;
-        this.renderOverviewTableRows();
-      });
-    }
-
     const sinifFilter = document.getElementById('overview-sinif-filter');
     if (sinifFilter) {
       sinifFilter.addEventListener('change', (e) => {
@@ -597,8 +631,14 @@ const App = {
     if (!tbody) return;
 
     let ogrenciler = Store.getOgrenciler();
+    const aktifModul = this.getAktifModul();
 
-    // Filtreleme
+    // 1. Modül Filtresi (Başlıktaki modül seçiciden aktif olan modüle göre)
+    if (aktifModul) {
+      ogrenciler = ogrenciler.filter(o => o.modulId === aktifModul.id);
+    }
+
+    // 2. Arama Filtresi
     if (this.overviewSearchQuery) {
       const q = this.overviewSearchQuery;
       ogrenciler = ogrenciler.filter(o =>
@@ -608,10 +648,7 @@ const App = {
       );
     }
 
-    if (this.overviewModulFilter) {
-      ogrenciler = ogrenciler.filter(o => o.modulId === this.overviewModulFilter);
-    }
-
+    // 3. Sınıf Filtresi
     if (this.overviewSinifFilter) {
       ogrenciler = ogrenciler.filter(o => String(o.sinif) === String(this.overviewSinifFilter));
     }
@@ -626,7 +663,9 @@ const App = {
               </div>
               <div>
                 <p class="font-medium text-xs text-[var(--color-ink)]">Henüz öğrenci kaydı bulunamadı</p>
-                <p class="text-[11px] text-[var(--color-ink-muted)]">Kriterlere uygun öğrenci yok veya henüz kayıt yapılmadı.</p>
+                <p class="text-[11px] text-[var(--color-ink-muted)]">
+                  ${aktifModul ? `${aktifModul.ad} kademesinde kriterlere uygun öğrenci bulunamadı.` : 'Kriterlere uygun öğrenci yok veya henüz kayıt yapılmadı.'}
+                </p>
               </div>
               <button onclick="App.openOgrenciModal()" class="btn-tactile btn-tactile-primary text-xs">
                 + Yeni Öğrenci Ekle
@@ -734,14 +773,20 @@ const App = {
     const container = document.getElementById('overview-overdue-list');
     if (!container) return;
 
+    const aktifModul = this.getAktifModul();
     const allTasks = Store.getGorevler();
-    const overdueTasks = allTasks.filter(g => g.durum === 'gecikti');
+    let overdueTasks = allTasks.filter(g => g.durum === 'gecikti');
+
+    if (aktifModul) {
+      const modulOgrenciIds = new Set(Store.getOgrenciler().filter(o => o.modulId === aktifModul.id).map(o => String(o.id)));
+      overdueTasks = overdueTasks.filter(g => modulOgrenciIds.has(String(g.ogrenciId)));
+    }
 
     if (overdueTasks.length === 0) {
       container.innerHTML = `
         <div class="py-6 text-center text-xs text-[var(--color-success)] flex items-center justify-center gap-2">
           <i data-lucide="check-circle" class="w-4 h-4"></i>
-          <span>Tüm ödevler zamanında, harika! Geciken görev bulunmuyor.</span>
+          <span>${aktifModul ? `${aktifModul.ad} kademesi için geciken ödev bulunmuyor.` : 'Tüm ödevler zamanında, harika! Geciken görev bulunmuyor.'}</span>
         </div>
       `;
       if (window.lucide) lucide.createIcons();
@@ -1492,34 +1537,68 @@ const App = {
     }
   },
 
+  selectModulFilter(modulId) {
+    Store.setAktifModul(modulId);
+    this.overviewSinifFilter = '';
+    this.closeModal();
+    this.updateGlobalBadges();
+    this.populateStudentDropdown();
+    this.renderCurrentView();
+    const modul = this.getAktifModul();
+    this.showToast(modul ? `${modul.ad} modülü seçildi` : 'Tüm Modüller listeleniyor');
+  },
+
   openModulSeciciModal() {
     const moduller = typeof MODULLER !== 'undefined' ? MODULLER : [];
-    const aktifId = Store.data.aktifModulId;
+    const aktifId = Store.data.aktifModulId || '';
+    const allStudents = Store.getOgrenciler();
+    const isAllSelected = !aktifId || aktifId === 'all' || aktifId === 'tumu';
 
     const html = `
       <div class="space-y-4">
         <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
           <div>
-            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Aktif Modül Seçimi</h3>
-            <p class="text-xs text-[var(--color-ink-muted)]">Çalışmak istediğiniz hedef eğitim kademesini belirleyin.</p>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Modül Filtresi & Seçimi</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Paneli hedef eğitim kademesine göre filtreleyin veya tüm portföyü listeleyin.</p>
           </div>
           <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
 
-        <div class="grid grid-cols-1 gap-3">
+        <div class="grid grid-cols-1 gap-2.5">
+          <!-- Tüm Modüller Seçeneği -->
+          <div onclick="App.selectModulFilter('');" class="p-3.5 rounded-[var(--radius-md)] bg-[var(--color-paper-3)] border ${isAllSelected ? 'border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]' : 'border-[var(--color-rule)] hover:border-[var(--color-rule-strong)]'} transition-all cursor-pointer flex items-center justify-between group">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-[var(--radius-sm)] ${isAllSelected ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-paper-4)] text-[var(--color-ink-muted)]'} flex items-center justify-center font-mono font-bold text-xs">
+                TÜM
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h4 class="font-semibold text-xs text-[var(--color-ink)] group-hover:text-[var(--color-accent)] transition-colors">Tüm Modüller (Portföy)</h4>
+                  <span class="meta-pill text-[10px] font-mono">${allStudents.length} Öğrenci</span>
+                </div>
+                <p class="text-[11px] font-mono text-[var(--color-ink-faint)] mt-0.5">Kayıtlı tüm kademe ve sınıflardaki öğrenciler</p>
+              </div>
+            </div>
+            ${isAllSelected ? `<i data-lucide="check" class="w-4 h-4 text-[var(--color-accent)]"></i>` : ''}
+          </div>
+
           ${moduller.map(m => {
-            const isSelected = m.id === aktifId;
+            const isSelected = !isAllSelected && m.id === aktifId;
+            const count = allStudents.filter(o => o.modulId === m.id).length;
             return `
-              <div onclick="Store.setAktifModul('${m.id}'); App.closeModal(); App.updateGlobalBadges(); App.renderCurrentView(); App.showToast('${m.ad} modülü aktif edildi');" class="p-3.5 rounded-[var(--radius-md)] bg-[var(--color-paper-3)] border ${isSelected ? 'border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]' : 'border-[var(--color-rule)] hover:border-[var(--color-rule-strong)]'} transition-all cursor-pointer flex items-center justify-between group">
+              <div onclick="App.selectModulFilter('${m.id}');" class="p-3.5 rounded-[var(--radius-md)] bg-[var(--color-paper-3)] border ${isSelected ? 'border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]' : 'border-[var(--color-rule)] hover:border-[var(--color-rule-strong)]'} transition-all cursor-pointer flex items-center justify-between group">
                 <div class="flex items-center gap-3">
                   <div class="w-9 h-9 rounded-[var(--radius-sm)] ${isSelected ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-paper-4)] text-[var(--color-ink-muted)]'} flex items-center justify-center font-mono font-bold text-xs">
                     ${m.kisaltma || m.id.toUpperCase()}
                   </div>
                   <div>
-                    <h4 class="font-semibold text-xs text-[var(--color-ink)] group-hover:text-[var(--color-accent)] transition-colors">${m.ad}</h4>
-                    <p class="text-[11px] font-mono text-[var(--color-ink-faint)]">Sınıflar: ${m.siniflar.map(s => s + '. Sınıf').join(', ')}</p>
+                    <div class="flex items-center gap-2">
+                      <h4 class="font-semibold text-xs text-[var(--color-ink)] group-hover:text-[var(--color-accent)] transition-colors">${m.ad}</h4>
+                      <span class="meta-pill text-[10px] font-mono">${count} Öğrenci</span>
+                    </div>
+                    <p class="text-[11px] font-mono text-[var(--color-ink-faint)] mt-0.5">Sınıflar: ${m.siniflar.map(s => s + '. Sınıf').join(', ')}</p>
                   </div>
                 </div>
                 ${isSelected ? `<i data-lucide="check" class="w-4 h-4 text-[var(--color-accent)]"></i>` : ''}
