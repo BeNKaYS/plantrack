@@ -45,6 +45,11 @@ const Store = {
       this.save();
     }
 
+    if (!Array.isArray(this.data.kaynaklar) || this.data.kaynaklar.length === 0) {
+      this.data.kaynaklar = this.getDefaultKaynaklar();
+      this.save();
+    }
+
     this.refreshDeadlines();
   },
 
@@ -74,13 +79,55 @@ const Store = {
       ogrenciKonuDurumlari: [],
       hataKayitlari: [],
       sinifNotlari: [],
-      calismaKayitlari: []
+      calismaKayitlari: [],
+      kaynaklar: this.getDefaultKaynaklar()
     };
   },
 
   resetToFactory() {
     this.data = this.getSeedData();
     this.save();
+  },
+
+  getDefaultKaynaklar() {
+    return [
+      { id: 'kyn-1', ad: 'Kazanım Soru Bankası', yayinevi: 'MEB', dersId: '' },
+      { id: 'kyn-2', ad: 'Soru Bankası', yayinevi: 'Bilgi Sarmal', dersId: '' },
+      { id: 'kyn-3', ad: 'Hız Soru Bankası', yayinevi: 'Hız Yayınları', dersId: '' },
+      { id: 'kyn-4', ad: 'Elit Soru Dünyası', yayinevi: 'Limit Yayınları', dersId: '' },
+      { id: 'kyn-5', ad: 'Yeni Nesil Master', yayinevi: 'Okyanus Yayınları', dersId: '' },
+      { id: 'kyn-6', ad: 'Fasikül Soru Bankası', yayinevi: 'Apotemi', dersId: '' },
+      { id: 'kyn-7', ad: 'Simülasyon Denemeleri', yayinevi: '3D Yayınları', dersId: '' }
+    ];
+  },
+
+  getKaynaklar() {
+    if (!Array.isArray(this.data.kaynaklar) || this.data.kaynaklar.length === 0) {
+      this.data.kaynaklar = this.getDefaultKaynaklar();
+      this.save();
+    }
+    return this.data.kaynaklar;
+  },
+
+  getKaynak(id) {
+    if (!id) return null;
+    return this.getKaynaklar().find(k => String(k.id) === String(id)) || null;
+  },
+
+  addKaynak(veri) {
+    const id = 'kyn-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
+    const yeniKaynak = {
+      id,
+      ad: (veri.ad || 'Soru Bankası').trim(),
+      yayinevi: (veri.yayinevi || 'Genel').trim(),
+      dersId: veri.dersId || ''
+    };
+    if (!Array.isArray(this.data.kaynaklar)) {
+      this.data.kaynaklar = this.getDefaultKaynaklar();
+    }
+    this.data.kaynaklar.push(yeniKaynak);
+    this.save();
+    return yeniKaynak;
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -543,6 +590,16 @@ const Store = {
   getModulForOgrenci(ogrenci) {
     if (!ogrenci || typeof MODULLER === 'undefined') return null;
     return MODULLER.find(m => m.id === ogrenci.modulId) || null;
+  },
+
+  getDers(dersId) {
+    if (!dersId || typeof DERSLER === 'undefined') return null;
+    return DERSLER.find(d => d.id === dersId) || null;
+  },
+
+  getKonu(konuId) {
+    if (!konuId || typeof KONULAR === 'undefined') return null;
+    return KONULAR.find(k => k.id === konuId) || null;
   }
 };
 

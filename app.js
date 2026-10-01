@@ -10,8 +10,17 @@ const App = {
 
   // Arama ve Filtre Durumları (View geçişlerinde korunur)
   overviewSearchQuery: '',
-  overviewModulFilter: '',
   overviewSinifFilter: '',
+
+  // Matris State
+  matrisAktifDersId: '',
+  matrisAktifKonuId: null,
+
+  // Görevler (Tasks) State
+  tasksSearchQuery: '',
+  tasksDurumFilter: '',
+  tasksDersFilter: '',
+  tasksHideCompleted: false,
 
   init() {
     Store.init();
@@ -144,8 +153,10 @@ const App = {
         this.renderCockpit();
         break;
       case 'matrix':
+        this.renderMatrix();
         break;
       case 'tasks':
+        this.renderTasks();
         break;
       case 'report':
         break;
@@ -1205,6 +1216,1014 @@ const App = {
   },
 
   // ─────────────────────────────────────────────────────────────
+  // VIEW 3: ÇALIŞMA & ÖDEV MATRİSİ (RENDER MATRIX)
+  // ─────────────────────────────────────────────────────────────
+  renderMatrix() {
+    const view = document.getElementById('view-matrix');
+    if (!view) return;
+
+    const ogr = Store.getAktifOgrenci();
+    if (!ogr) {
+      view.innerHTML = `
+        <div class="max-w-7xl mx-auto p-6 md:p-8 flex items-center justify-center min-h-[400px]">
+          <div class="max-w-md w-full text-center space-y-4 bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-lg)] p-8">
+            <div class="w-12 h-12 rounded-full bg-[var(--color-paper-3)] border border-[var(--color-rule-strong)] text-[var(--color-ink-faint)] flex items-center justify-center mx-auto">
+              <i data-lucide="grid" class="w-6 h-6"></i>
+            </div>
+            <div>
+              <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Öğrenci Seçilmedi</h3>
+              <p class="text-xs text-[var(--color-ink-muted)] mt-1">
+                Çalışma ve ödev matrisini görüntülemek için lütfen üst menüden bir öğrenci seçin veya yeni öğrenci kaydı oluşturun.
+              </p>
+            </div>
+            <div class="flex items-center justify-center gap-3 pt-2">
+              <button onclick="App.openOgrenciModal()" class="btn-tactile btn-tactile-primary text-xs">
+                <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+                <span>+ Yeni Öğrenci Ekle</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+
+    const dersler = Store.getDerslerForOgrenci(ogr);
+    const modul = Store.getModulForOgrenci(ogr) || { ad: 'Modül', id: ogr.modulId };
+
+    // Kural 1: App.matrisAktifDersId ilk açılışta öğrencinin ilk dersi olarak set edilir
+    if (!this.matrisAktifDersId || !dersler.some(d => d.id === this.matrisAktifDersId)) {
+      this.matrisAktifDersId = dersler.length > 0 ? dersler[0].id : '';
+    }
+
+    const seciliDers = dersler.find(d => d.id === this.matrisAktifDersId) || dersler[0];
+    const tumKonular = seciliDers ? Store.getKonularForDers(seciliDers.id) : [];
+
+    // Kural 2: App.matrisAktifKonuId ilk açılışta null
+    if (this.matrisAktifKonuId && !tumKonular.some(k => k.id === this.matrisAktifKonuId)) {
+      this.matrisAktifKonuId = null;
+    }
+
+    // Tamamlanan konu sayısı ve yüzdesi
+    const tamamlananKonuSayisi = tumKonular.filter(k => {
+      const kd = Store.getKonuDurumu(ogr.id, k.id);
+      return kd && kd.durum === 'tamam';
+    }).length;
+    const konuIlerlemePct = tumKonular.length > 0 ? Math.round((tamamlananKonuSayisi / tumKonular.length) * 100) : 0;
+
+    // Ünite gruplaması
+    const unitMap = new Map();
+    tumKonular.forEach(k => {
+      const key = k.uniteNo || k.uniteAdi || '1';
+      if (!unitMap.has(key)) {
+        unitMap.set(key, {
+          uniteNo: k.uniteNo || 1,
+          uniteAdi: k.uniteAdi || 'Ünite ' + key,
+          konular: []
+        });
+      }
+      unitMap.get(key).konular.push(k);
+    });
+
+    // Seçili konu detayı
+    const seciliKonu = this.matrisAktifKonuId ? Store.getKonu(this.matrisAktifKonuId) : null;
+    const konuDurumu = seciliKonu ? Store.getKonuDurumu(ogr.id, seciliKonu.id) : { durum: 'islenmedi', not: '' };
+
+    // Bu konuya ait görevler
+    const konuTasks = seciliKonu ? Store.getGorevler(ogr.id).filter(g => g.konuId === seciliKonu.id) : [];
+    const toplamCozulen = konuTasks.reduce((acc, g) => acc + (g.cozulenSoru || 0), 0);
+    const toplamDogru = konuTasks.reduce((acc, g) => acc + (g.dogruSoru || 0), 0);
+    const toplamYanlis = konuTasks.reduce((acc, g) => acc + (g.yanlisSoru || 0), 0);
+    const toplamHedef = konuTasks.reduce((acc, g) => acc + (g.hedefSoru || 0), 0);
+    const dogrulukPct = toplamCozulen > 0 ? Math.round((toplamDogru / toplamCozulen) * 100) : 0;
+
+    // Öğrencinin seçili kaynakları
+    const seciliKaynakIds = Array.isArray(ogr.seciliKaynaklar) ? ogr.seciliKaynaklar : [];
+    const kaynaklar = seciliKaynakIds.map(id => Store.getKaynak(id)).filter(Boolean);
+
+    view.innerHTML = `
+      <div class="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
+        <!-- Bölüm 1: Sayfa Başlığı & Ders Seçici -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[var(--color-rule)]">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="meta-pill">AKADEMİK MATRİS</span>
+              <span class="text-xs font-mono text-[var(--color-ink-faint)]">${ogr.adSoyad} (${ogr.sinif}. Sınıf · ${modul.ad})</span>
+            </div>
+            <h1 class="text-2xl font-bold font-display tracking-tight text-[var(--color-ink)]">Çalışma & Ödev Matrisi</h1>
+            <p class="text-xs text-[var(--color-ink-muted)] mt-0.5">Ders kazanımları, konu tamamlama durumları ve kaynak bazlı soru takibi</p>
+          </div>
+          <div class="flex items-center gap-2.5">
+            <button onclick="App.openKaynakModal()" class="btn-tactile btn-tactile-ghost flex items-center gap-1.5" title="Sisteme Yeni Kaynak Ekle">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>Kaynak Ekle</span>
+            </button>
+            <button onclick="App.openMatrisSutunModal()" class="btn-tactile btn-tactile-ghost flex items-center gap-1.5" title="Öğrencinin Takip Ettiği Kaynakları Düzenle">
+              <i data-lucide="columns" class="w-3.5 h-3.5"></i>
+              <span>Sütunları Düzenle</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Ders Sekmeleri (Tabs) -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-[var(--color-rule)]">
+          ${dersler.map(d => {
+            const isDersActive = d.id === this.matrisAktifDersId;
+            return `
+              <button onclick="App.selectMatrisDers('${d.id}')" class="px-4 py-2 text-xs font-semibold rounded-[var(--radius-sm)] transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${isDersActive ? 'bg-[var(--color-accent)] text-white shadow-sm' : 'bg-[var(--color-paper-2)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-3)] border border-[var(--color-rule)]'}">
+                <span>${d.ad}</span>
+                ${isDersActive ? `<span class="w-1.5 h-1.5 rounded-full bg-white"></span>` : ''}
+              </button>
+            `;
+          }).join('')}
+        </div>
+
+        <!-- Bölüm 2: Ana İçerik (İki Kolon: Sol 4/12, Sağ 8/12) -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <!-- Sol Kolon (4/12): Konu Listesi -->
+          <div class="lg:col-span-4 bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-md)] p-4 space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
+              <div>
+                <h3 class="font-display font-bold text-xs uppercase tracking-wider text-[var(--color-ink)]">${seciliDers ? seciliDers.ad : 'Ders'} Konuları</h3>
+                <p class="text-[11px] font-mono text-[var(--color-ink-faint)] mt-0.5">${tamamlananKonuSayisi} / ${tumKonular.length} konu tamamlandı (%${konuIlerlemePct})</p>
+              </div>
+              <div class="w-16 h-1.5 rounded-full bg-[var(--color-paper-4)] overflow-hidden">
+                <div class="h-full bg-[var(--color-accent)]" style="width: ${konuIlerlemePct}%"></div>
+              </div>
+            </div>
+
+            <div class="space-y-4 max-h-[620px] overflow-y-auto pr-1">
+              ${tumKonular.length === 0 ? `
+                <div class="py-12 text-center text-xs text-[var(--color-ink-muted)]">
+                  Bu ders için müfredat konusu bulunamadı.
+                </div>
+              ` : Array.from(unitMap.values()).map(u => `
+                <div class="space-y-1.5">
+                  <div class="text-[11px] font-mono font-semibold uppercase text-[var(--color-ink-faint)] px-2 py-1 bg-[var(--color-paper-3)] rounded-[var(--radius-xs)] flex items-center justify-between">
+                    <span>▼ Ünite ${u.uniteNo} — ${u.uniteAdi}</span>
+                    <span>${u.konular.length}</span>
+                  </div>
+                  <div class="space-y-1 pl-1">
+                    ${u.konular.map(konu => {
+                      const kd = Store.getKonuDurumu(ogr.id, konu.id);
+                      const kdMeta = KONU_DURUMLARI[kd.durum] || KONU_DURUMLARI.islenmedi;
+                      const isSelected = konu.id === this.matrisAktifKonuId;
+                      return `
+                        <div onclick="App.selectMatrisKonu('${konu.id}')" class="p-2.5 rounded-[var(--radius-sm)] border cursor-pointer transition-all flex items-center justify-between gap-2 group ${isSelected ? 'bg-[var(--color-paper-3)] border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]' : 'bg-[var(--color-paper)] border-[var(--color-rule)] hover:border-[var(--color-rule-strong)] hover:bg-[var(--color-paper-3)]'}">
+                          <div class="min-w-0 flex items-center gap-2">
+                            <i data-lucide="${kdMeta.ikon || 'circle'}" class="w-3.5 h-3.5 shrink-0 ${kd.durum === 'tamam' ? 'text-[var(--color-success)]' : kd.durum === 'tekrar_lazim' ? 'text-[var(--color-danger)]' : kd.durum === 'calisiliyor' ? 'text-[var(--color-warning)]' : 'text-[var(--color-ink-ghost)]'}"></i>
+                            <span class="text-xs font-medium text-[var(--color-ink)] truncate ${isSelected ? 'font-semibold text-[var(--color-accent)]' : ''}">${konu.konuAdi}</span>
+                          </div>
+                          <span class="meta-pill text-[10px] shrink-0 ${kd.durum === 'tamam' ? 'text-[var(--color-success)] bg-[var(--color-success-bg)]' : kd.durum === 'tekrar_lazim' ? 'text-[var(--color-danger)] bg-[var(--color-danger-bg)]' : kd.durum === 'calisiliyor' ? 'text-[var(--color-warning)] bg-[var(--color-warning-bg)]' : ''}">
+                            ${kdMeta.label}
+                          </span>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Sağ Kolon (8/12): Konu Detay Paneli -->
+          <div class="lg:col-span-8 bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-md)] p-5 space-y-6">
+            ${!seciliKonu ? `
+              <div class="py-24 text-center space-y-3">
+                <div class="w-12 h-12 rounded-full bg-[var(--color-paper-3)] border border-[var(--color-rule-strong)] text-[var(--color-ink-faint)] flex items-center justify-center mx-auto">
+                  <i data-lucide="mouse-pointer-click" class="w-6 h-6"></i>
+                </div>
+                <div>
+                  <h4 class="font-display font-semibold text-sm text-[var(--color-ink)]">Sol panelden bir konu seçin</h4>
+                  <p class="text-xs text-[var(--color-ink-muted)] mt-0.5">Konunun tamamlama durumunu değiştirebilir, soru sayılarını girebilir ve kaynak ödevlerini yönetebilirsiniz.</p>
+                </div>
+              </div>
+            ` : `
+              <!-- Konu Başlığı Alanı -->
+              <div class="space-y-3 pb-4 border-b border-[var(--color-rule)]">
+                <div>
+                  <div class="text-[11px] font-mono text-[var(--color-ink-faint)]">Ünite ${seciliKonu.uniteNo || 1} — ${seciliKonu.uniteAdi}</div>
+                  <h2 class="text-xl font-bold font-display text-[var(--color-ink)] mt-0.5">${seciliKonu.konuAdi}</h2>
+                  ${seciliKonu.aciklama ? `<p class="text-xs text-[var(--color-ink-muted)] mt-0.5">${seciliKonu.aciklama}</p>` : ''}
+                </div>
+
+                <!-- Durum Değiştirici (4 Buton) -->
+                <div>
+                  <label class="block text-[11px] font-mono font-medium text-[var(--color-ink-faint)] mb-1.5 uppercase">Kazanım Durumu</label>
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    ${Object.keys(KONU_DURUMLARI).map(kKey => {
+                      const kMeta = KONU_DURUMLARI[kKey];
+                      const isCurrent = konuDurumu.durum === kKey;
+                      return `
+                        <button onclick="App.setKonuDurumu('${seciliKonu.id}', '${kKey}')" class="p-2 rounded-[var(--radius-sm)] border text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer ${isCurrent ? 'bg-[var(--color-paper-4)] border-[var(--color-accent)] ring-1 ring-[var(--color-accent)] text-[var(--color-ink)]' : 'bg-[var(--color-paper-3)] border-[var(--color-rule)] text-[var(--color-ink-muted)] hover:border-[var(--color-rule-strong)] hover:text-[var(--color-ink)]'}">
+                          <i data-lucide="${kMeta.ikon || 'circle'}" class="w-3.5 h-3.5 ${kKey === 'tamam' ? 'text-[var(--color-success)]' : kKey === 'tekrar_lazim' ? 'text-[var(--color-danger)]' : kKey === 'calisiliyor' ? 'text-[var(--color-warning)]' : 'text-[var(--color-ink-faint)]'}"></i>
+                          <span>${kMeta.label}</span>
+                        </button>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+
+                <!-- Koç Not Alanı -->
+                <div class="p-3 bg-[var(--color-paper-3)] border border-[var(--color-rule)] rounded-[var(--radius-sm)] space-y-2">
+                  <div class="flex items-center justify-between">
+                    <span class="font-medium text-xs text-[var(--color-ink)] flex items-center gap-1.5">
+                      <i data-lucide="edit-3" class="w-3.5 h-3.5 text-[var(--color-accent)]"></i>
+                      <span>Koç Notu & Çalışma Direktifi</span>
+                    </span>
+                    <button onclick="App.saveKonuNotu('${seciliKonu.id}')" class="btn-tactile btn-tactile-ghost py-1 px-2 text-xs">
+                      <i data-lucide="save" class="w-3 h-3"></i>
+                      <span>Notu Kaydet</span>
+                    </button>
+                  </div>
+                  <textarea id="matris-konu-not" rows="2" placeholder="Bu konuyla ilgili öğrenciye özel not veya direktif..." class="w-full p-2 rounded-[var(--radius-xs)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] text-xs text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">${konuDurumu.not || ''}</textarea>
+                </div>
+              </div>
+
+              <!-- İlerleme Özeti (Konu Bazlı Toplam) -->
+              <div class="bg-[var(--color-paper-3)] border border-[var(--color-rule)] rounded-[var(--radius-sm)] p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-full bg-[var(--color-accent-subtle)] text-[var(--color-accent)] border border-[var(--color-accent-border)] flex items-center justify-center font-bold text-xs">
+                    %${dogrulukPct}
+                  </div>
+                  <div>
+                    <div class="font-bold text-xs text-[var(--color-ink)]">${toplamCozulen} Soru Çözüldü</div>
+                    <div class="text-[11px] text-[var(--color-ink-muted)]">Doğruluk: %${dogrulukPct} · Doğru: ${toplamDogru} · Yanlış: ${toplamYanlis}</div>
+                  </div>
+                </div>
+                <div class="text-right font-mono text-[11px] text-[var(--color-ink-faint)]">
+                  Toplam Hedef: ${toplamHedef || toplamCozulen} Soru
+                </div>
+              </div>
+
+              <!-- Kaynak Kartları -->
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <h3 class="font-display font-bold text-xs uppercase tracking-wider text-[var(--color-ink)]">
+                    Takip Edilen Kaynaklar (${kaynaklar.length})
+                  </h3>
+                  <button onclick="App.openMatrisSutunModal()" class="text-xs text-[var(--color-accent)] hover:underline flex items-center gap-1">
+                    <i data-lucide="settings" class="w-3 h-3"></i>
+                    <span>Kaynakları Yönet</span>
+                  </button>
+                </div>
+
+                ${kaynaklar.length === 0 ? `
+                  <div class="p-6 text-center rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-dashed border-[var(--color-rule-strong)] space-y-2">
+                    <p class="text-xs text-[var(--color-ink-muted)]">Henüz bu öğrenci için çalışma kaynağı seçilmemiş.</p>
+                    <button onclick="App.openMatrisSutunModal()" class="btn-tactile btn-tactile-primary text-xs">
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                      <span>Kaynak Seç & Ekle</span>
+                    </button>
+                  </div>
+                ` : `
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    ${kaynaklar.map(kyn => {
+                      const kTasks = konuTasks.filter(g => g.kaynakId === kyn.id);
+                      const kHedef = kTasks.reduce((acc, g) => acc + (g.hedefSoru || 0), 0);
+                      const kCozulen = kTasks.reduce((acc, g) => acc + (g.cozulenSoru || 0), 0);
+                      const kDogru = kTasks.reduce((acc, g) => acc + (g.dogruSoru || 0), 0);
+                      const kYanlis = kTasks.reduce((acc, g) => acc + (g.yanlisSoru || 0), 0);
+                      const kBos = Math.max(0, kCozulen - kDogru - kYanlis);
+                      const kPct = kHedef > 0 ? Math.min(100, Math.round((kCozulen / kHedef) * 100)) : (kCozulen > 0 ? 100 : 0);
+
+                      return `
+                        <div class="p-3.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] hover:border-[var(--color-rule-strong)] transition-all space-y-3">
+                          <div class="flex items-start justify-between gap-2">
+                            <div>
+                              <div class="font-bold text-xs text-[var(--color-ink)]">${kyn.yayinevi}</div>
+                              <div class="text-[11px] text-[var(--color-ink-muted)] truncate">${kyn.ad}</div>
+                            </div>
+                            <span class="meta-pill text-[10px] font-mono">%${kPct}</span>
+                          </div>
+
+                          <!-- Soru & İlerleme Çubuğu -->
+                          <div class="space-y-1">
+                            <div class="flex justify-between text-[11px] font-mono text-[var(--color-ink-faint)]">
+                              <span>Çözülen: ${kCozulen} / ${kHedef || kCozulen} soru</span>
+                              <span>${kPct}%</span>
+                            </div>
+                            <div class="w-full h-1.5 rounded-full bg-[var(--color-paper-4)] overflow-hidden">
+                              <div class="h-full bg-[var(--color-accent)]" style="width: ${kPct}%"></div>
+                            </div>
+                          </div>
+
+                          <!-- D / Y / B İstatistikleri -->
+                          <div class="flex items-center gap-3 text-xs font-mono">
+                            <span class="text-[var(--color-success)] font-semibold">D: ${kDogru}</span>
+                            <span class="text-[var(--color-danger)] font-semibold">Y: ${kYanlis}</span>
+                            <span class="text-[var(--color-ink-muted)]">B: ${kBos}</span>
+                          </div>
+
+                          <!-- Aksiyon Butonları -->
+                          <div class="flex items-center gap-2 pt-2 border-t border-[var(--color-rule)]">
+                            <button onclick="App.openSoruGirisiModal('${ogr.id}', '${seciliKonu.id}', '${kyn.id}')" class="btn-tactile btn-tactile-ghost py-1 px-2 text-[11px] flex-1 flex items-center justify-center gap-1">
+                              <i data-lucide="plus" class="w-3 h-3"></i>
+                              <span>+ Soru Ekle / Güncelle</span>
+                            </button>
+                            <button onclick="App.openGorevModal('${ogr.id}', null, '${seciliKonu.id}', '${kyn.id}')" class="btn-tactile btn-tactile-primary py-1 px-2 text-[11px] flex-1 flex items-center justify-center gap-1">
+                              <i data-lucide="check-square" class="w-3 h-3"></i>
+                              <span>Ödev Oluştur</span>
+                            </button>
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                `}
+              </div>
+            `}
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  },
+
+  selectMatrisDers(dersId) {
+    this.matrisAktifDersId = dersId;
+    this.matrisAktifKonuId = null;
+    this.renderMatrix();
+  },
+
+  selectMatrisKonu(konuId) {
+    this.matrisAktifKonuId = konuId;
+    this.renderMatrix();
+  },
+
+  setKonuDurumu(konuId, durum) {
+    const ogr = Store.getAktifOgrenci();
+    if (!ogr) return;
+    const kd = Store.getKonuDurumu(ogr.id, konuId);
+    Store.setKonuDurumu(ogr.id, konuId, durum, kd.not || '');
+    const meta = KONU_DURUMLARI[durum] || { label: durum };
+    this.showToast(`Konu durumu "${meta.label}" olarak güncellendi`);
+    this.renderMatrix();
+  },
+
+  saveKonuNotu(konuId) {
+    const ogr = Store.getAktifOgrenci();
+    if (!ogr) return;
+    const textarea = document.getElementById('matris-konu-not');
+    const val = textarea ? textarea.value.trim() : '';
+    const kd = Store.getKonuDurumu(ogr.id, konuId);
+    Store.setKonuDurumu(ogr.id, konuId, kd.durum || 'islenmedi', val);
+    this.showToast('Konu notu kaydedildi');
+  },
+
+  openSoruGirisiModal(ogrenciId, konuId, kaynakId) {
+    const ogr = Store.getOgrenci(ogrenciId);
+    const konu = Store.getKonu(konuId);
+    const kaynak = Store.getKaynak(kaynakId);
+    if (!ogr || !konu || !kaynak) return;
+
+    // Mevcut bir görev var mı bak
+    const existing = Store.getGorevler(ogr.id).find(g => g.konuId === konuId && g.kaynakId === kaynakId);
+    const defDogru = existing ? (existing.dogruSoru || 0) : 0;
+    const defYanlis = existing ? (existing.yanlisSoru || 0) : 0;
+    const defHedef = existing ? (existing.hedefSoru || 0) : 0;
+    const defBos = existing ? Math.max(0, (existing.cozulenSoru || 0) - defDogru - defYanlis) : 0;
+
+    const html = `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
+          <div>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Soru Girişi & Sonuç Takibi</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">
+              ${kaynak.yayinevi} · <strong class="text-[var(--color-ink)]">${konu.konuAdi}</strong>
+            </p>
+          </div>
+          <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <form id="form-soru-girisi" class="space-y-4 text-xs">
+          <div>
+            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Hedef Soru Sayısı</label>
+            <input type="number" id="sg-hedef" min="0" value="${defHedef || 40}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block font-medium text-[var(--color-success)] mb-1">Doğru (D)</label>
+              <input type="number" id="sg-dogru" min="0" value="${defDogru}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-success)]">
+            </div>
+            <div>
+              <label class="block font-medium text-[var(--color-danger)] mb-1">Yanlış (Y)</label>
+              <input type="number" id="sg-yanlis" min="0" value="${defYanlis}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-danger)]">
+            </div>
+            <div>
+              <label class="block font-medium text-[var(--color-ink-muted)] mb-1">Boş (B)</label>
+              <input type="number" id="sg-bos" min="0" value="${defBos}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            </div>
+          </div>
+
+          <div class="p-3 bg-[var(--color-paper-3)] rounded-[var(--radius-sm)] border border-[var(--color-rule)] flex items-center justify-between text-xs">
+            <span class="text-[var(--color-ink-muted)]">Toplam Çözülen:</span>
+            <span id="sg-toplam-preview" class="font-mono font-bold text-[var(--color-ink)]">${defDogru + defYanlis + defBos} Soru</span>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
+            <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">Vazgeç</button>
+            <button type="submit" class="btn-tactile btn-tactile-primary">Kaydet</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    this.openModal(html);
+
+    const inputHedef = document.getElementById('sg-hedef');
+    const inputDogru = document.getElementById('sg-dogru');
+    const inputYanlis = document.getElementById('sg-yanlis');
+    const inputBos = document.getElementById('sg-bos');
+    const preview = document.getElementById('sg-toplam-preview');
+
+    const updatePreview = () => {
+      const d = Math.max(0, parseInt(inputDogru?.value) || 0);
+      const y = Math.max(0, parseInt(inputYanlis?.value) || 0);
+      const b = Math.max(0, parseInt(inputBos?.value) || 0);
+      if (preview) preview.textContent = `${d + y + b} Soru`;
+    };
+
+    [inputDogru, inputYanlis, inputBos, inputHedef].forEach(el => {
+      if (el) el.addEventListener('input', updatePreview);
+    });
+
+    const form = document.getElementById('form-soru-girisi');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const d = parseInt(inputDogru.value) || 0;
+        const y = parseInt(inputYanlis.value) || 0;
+        const b = parseInt(inputBos.value) || 0;
+        const hedef = parseInt(inputHedef.value) || (d + y + b);
+
+        // Kural 6: Negatif sayı kabul edilmez
+        if (d < 0 || y < 0 || b < 0 || hedef < 0) {
+          this.showToast('Soru sayıları negatif olamaz!');
+          return;
+        }
+
+        const toplamCozulen = d + y + b;
+        // Kural 6: Toplam hedefSoru'yu aşamaz
+        if (hedef > 0 && toplamCozulen > hedef) {
+          this.showToast(`Çözülen soru (${toplamCozulen}), hedef soru sayısını (${hedef}) aşamaz!`);
+          return;
+        }
+
+        if (existing) {
+          Store.updateGorev(existing.id, {
+            dogruSoru: d,
+            yanlisSoru: y,
+            cozulenSoru: toplamCozulen,
+            hedefSoru: Math.max(existing.hedefSoru || 0, hedef, toplamCozulen),
+            durum: 'tamamlandi'
+          });
+        } else {
+          Store.addGorev({
+            ogrenciId: ogr.id,
+            konuId,
+            kaynakId,
+            dersId: konu.dersId,
+            baslik: `${kaynak.yayinevi} - ${konu.konuAdi}`,
+            hedefSoru: hedef || toplamCozulen,
+            cozulenSoru: toplamCozulen,
+            dogruSoru: d,
+            yanlisSoru: y,
+            durum: 'tamamlandi'
+          });
+        }
+
+        // Konu durumunu otomatik olarak 'calisiliyor' ya da 'tamam' yap (eğer henüz islenmedi ise)
+        const kd = Store.getKonuDurumu(ogr.id, konuId);
+        if (kd.durum === 'islenmedi') {
+          Store.setKonuDurumu(ogr.id, konuId, 'calisiliyor', kd.not);
+        }
+
+        this.closeModal();
+        this.showToast('Soru verisi başarıyla kaydedildi');
+        this.renderMatrix();
+      });
+    }
+  },
+
+  openMatrisSutunModal() {
+    const ogr = Store.getAktifOgrenci();
+    if (!ogr) {
+      this.showToast('Lütfen önce bir öğrenci seçin.');
+      return;
+    }
+
+    const tumKaynaklar = Store.getKaynaklar();
+    const seciliSet = new Set(Array.isArray(ogr.seciliKaynaklar) ? ogr.seciliKaynaklar : []);
+
+    const html = `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
+          <div>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Matris Kaynak Sütunları</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Öğrencinin çalışma matrisinde takip edilecek kaynakları seçin.</p>
+          </div>
+          <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <form id="form-matris-sutunlar" class="space-y-3 text-xs">
+          <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+            ${tumKaynaklar.map(k => {
+              const isChecked = seciliSet.has(k.id);
+              return `
+                <label class="p-3 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] hover:border-[var(--color-rule-strong)] flex items-center justify-between cursor-pointer transition-colors">
+                  <div class="flex items-center gap-3">
+                    <input type="checkbox" name="matris-kaynak" value="${k.id}" ${isChecked ? 'checked' : ''} class="w-4 h-4 rounded border-[var(--color-rule)] text-[var(--color-accent)] focus:ring-[var(--color-accent)]">
+                    <div>
+                      <div class="font-semibold text-[var(--color-ink)]">${k.yayinevi}</div>
+                      <div class="text-[11px] text-[var(--color-ink-muted)]">${k.ad}</div>
+                    </div>
+                  </div>
+                  <span class="meta-pill text-[10px] font-mono">Kaynak</span>
+                </label>
+              `;
+            }).join('')}
+          </div>
+
+          <div class="flex items-center justify-between pt-3 border-t border-[var(--color-rule)]">
+            <button type="button" onclick="App.openKaynakModal()" class="btn-tactile btn-tactile-ghost text-xs">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>+ Yeni Kaynak Tanımla</span>
+            </button>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">Vazgeç</button>
+              <button type="submit" class="btn-tactile btn-tactile-primary">Sütunları Kaydet</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    `;
+
+    this.openModal(html);
+
+    const form = document.getElementById('form-matris-sutunlar');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const checkedBoxes = Array.from(form.querySelectorAll('input[name="matris-kaynak"]:checked'));
+        const selectedIds = checkedBoxes.map(cb => cb.value);
+
+        Store.updateOgrenci(ogr.id, { seciliKaynaklar: selectedIds });
+        this.closeModal();
+        this.showToast('Kaynak sütunları güncellendi');
+        this.renderMatrix();
+      });
+    }
+  },
+
+  openKaynakModal() {
+    const ogr = Store.getAktifOgrenci();
+    const dersler = ogr ? Store.getDerslerForOgrenci(ogr) : [];
+
+    const dersOptions = `<option value="">— Genel (Tüm Dersler) —</option>` +
+      dersler.map(d => `<option value="${d.id}">${d.ad}</option>`).join('');
+
+    const html = `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
+          <div>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Yeni Kaynak Ekle</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Kütüphaneye yeni bir yayın veya soru bankası kaydedin.</p>
+          </div>
+          <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <form id="form-yeni-kaynak" class="space-y-3 text-xs">
+          <div>
+            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Yayınevi / Yayıncı <span class="text-[var(--color-danger)]">*</span></label>
+            <input type="text" id="kyn-yayinevi" required placeholder="Örn: Bilgi Sarmal, Hız Yayınları, Limit" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Kaynak Başlığı / Adı <span class="text-[var(--color-danger)]">*</span></label>
+            <input type="text" id="kyn-ad" required placeholder="Örn: Soru Bankası, Master Deneme Seti" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Ders İlişkisi</label>
+            <select id="kyn-ders" class="select-instrument w-full p-2">
+              ${dersOptions}
+            </select>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
+            <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">Vazgeç</button>
+            <button type="submit" class="btn-tactile btn-tactile-primary">Kaynağı Ekle</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    this.openModal(html);
+
+    const form = document.getElementById('form-yeni-kaynak');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const yayinevi = document.getElementById('kyn-yayinevi').value.trim();
+        const ad = document.getElementById('kyn-ad').value.trim();
+        const dersId = document.getElementById('kyn-ders').value;
+
+        if (!yayinevi || !ad) {
+          this.showToast('Lütfen yayınevi ve kaynak adını giriniz.');
+          return;
+        }
+
+        const yeni = Store.addKaynak({ ad, yayinevi, dersId });
+
+        // Aktif öğrencinin seçili kaynaklarına otomatik ekle
+        if (ogr) {
+          const sec = Array.isArray(ogr.seciliKaynaklar) ? [...ogr.seciliKaynaklar] : [];
+          if (!sec.includes(yeni.id)) {
+            sec.push(yeni.id);
+            Store.updateOgrenci(ogr.id, { seciliKaynaklar: sec });
+          }
+        }
+
+        this.closeModal();
+        this.showToast(`${yayinevi} - ${ad} kaynağı eklendi`);
+        if (this.currentView === 'matrix') {
+          this.renderMatrix();
+        }
+      });
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // VIEW 4: ÖDEV GEÇMİŞİ (RENDER TASKS)
+  // ─────────────────────────────────────────────────────────────
+  renderTasks() {
+    const view = document.getElementById('view-tasks');
+    if (!view) return;
+
+    const ogr = Store.getAktifOgrenci();
+    if (!ogr) {
+      view.innerHTML = `
+        <div class="max-w-7xl mx-auto p-6 md:p-8 flex items-center justify-center min-h-[400px]">
+          <div class="max-w-md w-full text-center space-y-4 bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-lg)] p-8">
+            <div class="w-12 h-12 rounded-full bg-[var(--color-paper-3)] border border-[var(--color-rule-strong)] text-[var(--color-ink-faint)] flex items-center justify-center mx-auto">
+              <i data-lucide="check-square" class="w-6 h-6"></i>
+            </div>
+            <div>
+              <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Öğrenci Seçilmedi</h3>
+              <p class="text-xs text-[var(--color-ink-muted)] mt-1">
+                Ödev geçmişini ve görev takibini görüntülemek için lütfen üst menüden bir öğrenci seçin.
+              </p>
+            </div>
+            <div class="flex items-center justify-center gap-3 pt-2">
+              <button onclick="App.openOgrenciModal()" class="btn-tactile btn-tactile-primary text-xs">
+                <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+                <span>+ Yeni Öğrenci Ekle</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+
+    const dersler = Store.getDerslerForOgrenci(ogr);
+    const allTasks = Store.getGorevler(ogr.id);
+    const modul = Store.getModulForOgrenci(ogr) || { ad: 'Modül' };
+
+    // Bölüm 2: Özet Satırı Hesaplamaları
+    const aktifCount = allTasks.filter(g => g.durum !== 'tamamlandi').length;
+    const gecikenCount = allTasks.filter(g => g.durum === 'gecikti').length;
+    const sevenDaysAgo = Date.now() - 7 * 24 * 3600 * 1000;
+    const buHaftaCount = allTasks.filter(g => {
+      if (g.durum !== 'tamamlandi' || !g.tamamlanmaTarihi) return false;
+      const t = new Date(g.tamamlanmaTarihi).getTime();
+      return !isNaN(t) && t >= sevenDaysAgo;
+    }).length;
+
+    // Filtreleme
+    let filtered = allTasks;
+    if (this.tasksSearchQuery) {
+      const q = this.tasksSearchQuery.toLowerCase();
+      filtered = filtered.filter(g => {
+        const ders = Store.getDers(g.dersId);
+        const konu = Store.getKonu(g.konuId);
+        return (g.baslik && g.baslik.toLowerCase().includes(q)) ||
+               (ders && ders.ad.toLowerCase().includes(q)) ||
+               (konu && konu.konuAdi.toLowerCase().includes(q));
+      });
+    }
+
+    if (this.tasksDurumFilter) {
+      filtered = filtered.filter(g => g.durum === this.tasksDurumFilter);
+    }
+
+    if (this.tasksDersFilter) {
+      filtered = filtered.filter(g => g.dersId === this.tasksDersFilter);
+    }
+
+    if (this.tasksHideCompleted) {
+      filtered = filtered.filter(g => g.durum !== 'tamamlandi');
+    }
+
+    // Bölüm 3: Gruplar
+    const bugunStr = new Date().toISOString().split('T')[0];
+    const groupGeciken = filtered.filter(g => g.durum === 'gecikti');
+    const groupBugun = filtered.filter(g => g.durum !== 'tamamlandi' && g.durum !== 'gecikti' && g.deadline === bugunStr);
+    const groupYaklasan = filtered.filter(g => g.durum !== 'tamamlandi' && g.durum !== 'gecikti' && g.deadline !== bugunStr);
+    const groupTamamlanan = filtered.filter(g => g.durum === 'tamamlandi');
+
+    const renderTaskItem = (g) => {
+      const ders = Store.getDers(g.dersId) || { ad: 'Genel', renk: 'blue' };
+      const konu = Store.getKonu(g.konuId);
+      const kaynak = Store.getKaynak(g.kaynakId);
+      const durumMeta = GOREV_DURUMLARI[g.durum] || GOREV_DURUMLARI.bekliyor;
+      const isCompleted = g.durum === 'tamamlandi';
+
+      return `
+        <div class="p-3.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] hover:border-[var(--color-rule-strong)] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isCompleted ? 'opacity-70 bg-[var(--color-paper-3)]' : ''}" style="border-left: 4px solid var(--color-${ders.renk || 'accent'});">
+          <div class="space-y-1.5 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="meta-pill text-[10px] text-[var(--color-accent)] bg-[var(--color-accent-subtle)] border-[var(--color-accent-border)] font-semibold">
+                ${ders.ad}
+              </span>
+              ${konu ? `<span class="text-[11px] font-mono text-[var(--color-ink-faint)]">· ${konu.konuAdi}</span>` : ''}
+              ${kaynak ? `<span class="meta-pill text-[10px] text-[var(--color-ink-muted)]">${kaynak.yayinevi}</span>` : ''}
+            </div>
+            <div class="font-bold text-xs text-[var(--color-ink)] ${isCompleted ? 'line-through text-[var(--color-ink-muted)]' : ''}">
+              ${g.baslik}
+            </div>
+            <div class="flex items-center gap-3 text-[11px] text-[var(--color-ink-muted)] font-mono flex-wrap">
+              ${g.hedefSoru ? `<span><i data-lucide="target" class="w-3 h-3 inline mr-1 text-[var(--color-ink-faint)]"></i>${g.hedefSoru} Soru</span>` : ''}
+              ${g.sureDk ? `<span><i data-lucide="clock" class="w-3 h-3 inline mr-1 text-[var(--color-ink-faint)]"></i>${g.sureDk} Dk</span>` : ''}
+              ${g.deadline ? `<span><i data-lucide="calendar" class="w-3 h-3 inline mr-1 text-[var(--color-ink-faint)]"></i>${App.formatDate(g.deadline)}</span>` : ''}
+            </div>
+            ${g.not ? `<div class="text-[11px] italic text-[var(--color-ink-muted)] mt-1">"${g.not}"</div>` : ''}
+          </div>
+
+          <div class="flex items-center gap-2 shrink-0 sm:self-center">
+            <span class="meta-pill text-[10px] font-medium ${g.durum === 'tamamlandi' ? 'text-[var(--color-success)] bg-[var(--color-success-bg)]' : g.durum === 'gecikti' ? 'text-[var(--color-danger)] bg-[var(--color-danger-bg)]' : g.durum === 'devam_ediyor' ? 'text-[var(--color-accent)] bg-[var(--color-accent-subtle)]' : ''}">
+              ${durumMeta.label}
+            </span>
+
+            ${!isCompleted ? `
+              <button onclick="Store.gorevTamamla('${g.id}'); App.renderTasks(); App.showToast('Görev tamamlandı!');" class="p-1.5 rounded-[var(--radius-xs)] text-[var(--color-success)] hover:bg-[var(--color-success-bg)] transition-colors" title="Görevi Tamamla">
+                <i data-lucide="check" class="w-4 h-4"></i>
+              </button>
+            ` : ''}
+
+            <button onclick="App.openGorevModal('${ogr.id}', '${g.id}')" class="p-1.5 rounded-[var(--radius-xs)] text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-3)] transition-colors" title="Düzenle">
+              <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+            </button>
+
+            <button onclick="App.openConfirmModal('Görevi Sil', 'Bu görevi silmek istediğinize emin misiniz?', () => { Store.deleteGorev('${g.id}'); App.renderTasks(); App.showToast('Görev silindi'); });" class="p-1.5 rounded-[var(--radius-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors" title="Sil">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    };
+
+    const hasAnyTask = groupGeciken.length > 0 || groupBugun.length > 0 || groupYaklasan.length > 0 || groupTamamlanan.length > 0;
+
+    view.innerHTML = `
+      <div class="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
+        <!-- Başlık -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[var(--color-rule)]">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="meta-pill">GÖREV TAKİBİ</span>
+              <span class="text-xs font-mono text-[var(--color-ink-faint)]">${ogr.adSoyad} (${ogr.sinif}. Sınıf · ${modul.ad})</span>
+            </div>
+            <h1 class="text-2xl font-bold font-display tracking-tight text-[var(--color-ink)]">Ödev & Görev Geçmişi</h1>
+            <p class="text-xs text-[var(--color-ink-muted)] mt-0.5">Tüm ödevlerin teslim durumu, hedef soru sayıları ve koç notları</p>
+          </div>
+          <div>
+            <button onclick="App.openGorevModal('${ogr.id}')" class="btn-tactile btn-tactile-primary">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>+ Yeni Ödev</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bölüm 4: Haftalık Direktif Banner -->
+        <div class="bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-md)] p-4 flex items-start justify-between gap-4">
+          <div class="flex items-start gap-3 min-w-0 flex-1">
+            <div class="w-8 h-8 rounded-[var(--radius-xs)] bg-[var(--color-accent-subtle)] text-[var(--color-accent)] flex items-center justify-center shrink-0 mt-0.5">
+              <i data-lucide="compass" class="w-4 h-4"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="text-[11px] font-mono uppercase tracking-wider text-[var(--color-accent)] font-semibold">Haftalık Koç Direktifi & Odak Noktası</div>
+              <div id="tasks-directive-text" ondblclick="App.editDirective()" class="text-xs text-[var(--color-ink)] mt-0.5 cursor-pointer hover:underline" title="Düzenlemek için çift tıklayın">
+                ${ogr.kocNotu ? ogr.kocNotu : '<span class="text-[var(--color-ink-muted)] italic">Henüz bu hafta için direktif girilmedi. Çift tıklayarak veya düzenle butonuna basarak direktif ekleyebilirsiniz.</span>'}
+              </div>
+              <div id="tasks-directive-editor" class="hidden mt-2 space-y-2">
+                <textarea id="input-koc-direktif" rows="2" class="w-full p-2 text-xs rounded-[var(--radius-xs)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">${ogr.kocNotu || ''}</textarea>
+                <div class="flex items-center gap-2">
+                  <button onclick="App.saveDirective()" class="btn-tactile btn-tactile-primary py-1 px-2.5 text-xs">Kaydet</button>
+                  <button onclick="App.cancelDirective()" class="btn-tactile btn-tactile-ghost py-1 px-2.5 text-xs">Vazgeç</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button onclick="App.editDirective()" class="btn-tactile btn-tactile-ghost py-1 px-2 text-xs shrink-0" title="Direktifi Düzenle">
+            <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+            <span>Düzenle</span>
+          </button>
+        </div>
+
+        <!-- Bölüm 1: Araç Çubuğu -->
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[var(--color-paper-2)] p-3 rounded-[var(--radius-md)] border border-[var(--color-rule)]">
+          <div class="relative flex-1 max-w-sm">
+            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-faint)]"></i>
+            <input type="text" id="tasks-search" value="${this.tasksSearchQuery}" placeholder="Görev, ders veya konu ara..." class="w-full pl-9 pr-3 py-1.5 text-xs bg-[var(--color-paper-3)] border border-[var(--color-rule)] rounded-[var(--radius-sm)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)] placeholder:text-[var(--color-ink-ghost)]">
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <select id="tasks-durum-filter" class="select-instrument text-xs py-1.5">
+              <option value="">Tüm Durumlar</option>
+              ${Object.keys(GOREV_DURUMLARI).map(k => `<option value="${k}" ${this.tasksDurumFilter === k ? 'selected' : ''}>${GOREV_DURUMLARI[k].label}</option>`).join('')}
+            </select>
+            <select id="tasks-ders-filter" class="select-instrument text-xs py-1.5">
+              <option value="">Tüm Dersler</option>
+              ${dersler.map(d => `<option value="${d.id}" ${this.tasksDersFilter === d.id ? 'selected' : ''}>${d.ad}</option>`).join('')}
+            </select>
+            <label class="flex items-center gap-1.5 text-xs text-[var(--color-ink-muted)] cursor-pointer select-none px-2 py-1 bg-[var(--color-paper-3)] rounded-[var(--radius-xs)] border border-[var(--color-rule)]">
+              <input type="checkbox" id="tasks-hide-completed" ${this.tasksHideCompleted ? 'checked' : ''} class="w-3.5 h-3.5 rounded text-[var(--color-accent)]">
+              <span>Tamamlananları Gizle</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Bölüm 2: Özet Satırı -->
+        <div class="flex items-center justify-between text-xs text-[var(--color-ink-muted)] px-1">
+          <div class="flex items-center gap-2 font-mono">
+            <span><strong>${aktifCount}</strong> aktif</span>
+            <span>·</span>
+            <span class="${gecikenCount > 0 ? 'text-[var(--color-danger)] font-bold' : ''}"><strong>${gecikenCount}</strong> gecikmiş</span>
+            <span>·</span>
+            <span><strong>${buHaftaCount}</strong> bu hafta tamamlandı</span>
+          </div>
+          <div class="font-mono text-[11px] text-[var(--color-ink-faint)]">
+            Toplam: ${allTasks.length} Görev
+          </div>
+        </div>
+
+        <!-- Bölüm 3: Görev Listesi (Gruplu) -->
+        <div class="space-y-6">
+          ${!hasAnyTask ? `
+            <div class="p-12 text-center rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] space-y-3">
+              <div class="w-10 h-10 rounded-full bg-[var(--color-paper-3)] text-[var(--color-ink-faint)] flex items-center justify-center mx-auto">
+                <i data-lucide="inbox" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <p class="font-medium text-xs text-[var(--color-ink)]">Kriterlere uygun ödev bulunamadı</p>
+                <p class="text-[11px] text-[var(--color-ink-muted)]">Arama filtrenizi temizleyebilir veya yeni bir ödev oluşturabilirsiniz.</p>
+              </div>
+              <button onclick="App.openGorevModal('${ogr.id}')" class="btn-tactile btn-tactile-primary text-xs">
+                + Yeni Ödev Ekle
+              </button>
+            </div>
+          ` : `
+            <!-- 1. Gecikmiş Görevler (Kural 5: Boşsa gizlenir) -->
+            ${groupGeciken.length > 0 ? `
+              <div class="space-y-3">
+                <div class="flex items-center gap-2 text-xs font-bold font-display text-[var(--color-danger)] uppercase tracking-wider">
+                  <span class="w-2 h-2 rounded-full bg-[var(--color-danger)]"></span>
+                  <span>Gecikmiş Ödevler (${groupGeciken.length})</span>
+                </div>
+                <div class="space-y-2">
+                  ${groupGeciken.map(renderTaskItem).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- 2. Bugün Teslim (Kural 5: Boşsa gizlenir) -->
+            ${groupBugun.length > 0 ? `
+              <div class="space-y-3">
+                <div class="flex items-center gap-2 text-xs font-bold font-display text-[var(--color-warning)] uppercase tracking-wider">
+                  <span class="w-2 h-2 rounded-full bg-[var(--color-warning)]"></span>
+                  <span>Bugün Teslim Edilecekler (${groupBugun.length})</span>
+                </div>
+                <div class="space-y-2">
+                  ${groupBugun.map(renderTaskItem).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- 3. Yaklaşan Görevler (Kural 5: Boşsa gizlenir) -->
+            ${groupYaklasan.length > 0 ? `
+              <div class="space-y-3">
+                <div class="flex items-center gap-2 text-xs font-bold font-display text-[var(--color-accent)] uppercase tracking-wider">
+                  <span class="w-2 h-2 rounded-full bg-[var(--color-accent)]"></span>
+                  <span>Yaklaşan Ödevler (${groupYaklasan.length})</span>
+                </div>
+                <div class="space-y-2">
+                  ${groupYaklasan.map(renderTaskItem).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- 4. Tamamlananlar (Kural 5: Boşsa gizlenir; Varsayılan kapalı) -->
+            ${groupTamamlanan.length > 0 ? `
+              <details class="group bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-md)] p-4 space-y-3">
+                <summary class="cursor-pointer font-display font-semibold text-xs text-[var(--color-ink)] flex items-center justify-between select-none">
+                  <div class="flex items-center gap-2 text-[var(--color-success)]">
+                    <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                    <span>Tamamlanan Ödevler (${groupTamamlanan.length})</span>
+                  </div>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-[var(--color-ink-faint)] transition-transform group-open:rotate-180"></i>
+                </summary>
+                <div class="space-y-2 pt-3 border-t border-[var(--color-rule)]">
+                  ${groupTamamlanan.map(renderTaskItem).join('')}
+                </div>
+              </details>
+            ` : ''}
+          `}
+        </div>
+      </div>
+    `;
+
+    // Event Dinleyicileri (Kural 4: State view'lar arası geçişte korunur)
+    const searchInput = document.getElementById('tasks-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        this.tasksSearchQuery = e.target.value.trim();
+        this.renderTasks();
+      });
+    }
+
+    const durumFilter = document.getElementById('tasks-durum-filter');
+    if (durumFilter) {
+      durumFilter.addEventListener('change', (e) => {
+        this.tasksDurumFilter = e.target.value;
+        this.renderTasks();
+      });
+    }
+
+    const dersFilter = document.getElementById('tasks-ders-filter');
+    if (dersFilter) {
+      dersFilter.addEventListener('change', (e) => {
+        this.tasksDersFilter = e.target.value;
+        this.renderTasks();
+      });
+    }
+
+    const hideCompleted = document.getElementById('tasks-hide-completed');
+    if (hideCompleted) {
+      hideCompleted.addEventListener('change', (e) => {
+        this.tasksHideCompleted = e.target.checked;
+        this.renderTasks();
+      });
+    }
+
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  },
+
+  editDirective() {
+    const txt = document.getElementById('tasks-directive-text');
+    const editor = document.getElementById('tasks-directive-editor');
+    if (txt && editor) {
+      txt.classList.add('hidden');
+      editor.classList.remove('hidden');
+      const input = document.getElementById('input-koc-direktif');
+      if (input) input.focus();
+    }
+  },
+
+  cancelDirective() {
+    const txt = document.getElementById('tasks-directive-text');
+    const editor = document.getElementById('tasks-directive-editor');
+    if (txt && editor) {
+      txt.classList.remove('hidden');
+      editor.classList.add('hidden');
+    }
+  },
+
+  saveDirective() {
+    const ogr = Store.getAktifOgrenci();
+    if (!ogr) return;
+    const input = document.getElementById('input-koc-direktif');
+    const val = input ? input.value.trim() : '';
+    Store.updateOgrenci(ogr.id, { kocNotu: val });
+    this.showToast('Haftalık koç direktifi güncellendi');
+    this.renderTasks();
+  },
+
+  // ─────────────────────────────────────────────────────────────
   // MODAL FONKSİYONLARI (ÖĞRENCİ, GÖREV, MODÜL SEÇİCİ)
   // ─────────────────────────────────────────────────────────────
   openOgrenciModal(ogrenciId = null) {
@@ -1366,7 +2385,7 @@ const App = {
     }
   },
 
-  openGorevModal(ogrenciId, gorevId = null, konuId = null) {
+  openGorevModal(ogrenciId, gorevId = null, konuId = null, kaynakId = null) {
     const targetOgrId = ogrenciId || Store.data.aktifOgrenciId;
     const ogr = Store.getOgrenci(targetOgrId);
 
@@ -1379,10 +2398,28 @@ const App = {
     const mevcutGorev = isEdit ? Store.getGorevler(ogr.id).find(g => String(g.id) === String(gorevId)) : null;
 
     const dersler = Store.getDerslerForOgrenci(ogr);
-    const seciliDersId = mevcutGorev ? mevcutGorev.dersId : (dersler.length > 0 ? dersler[0].id : '');
+
+    // Eğer konuId belirtildiyse dersini bul
+    let varsayilanDersId = dersler.length > 0 ? dersler[0].id : '';
+    if (mevcutGorev) {
+      varsayilanDersId = mevcutGorev.dersId;
+    } else if (konuId) {
+      const targetKonu = Store.getKonu(konuId);
+      if (targetKonu && targetKonu.dersId) {
+        varsayilanDersId = targetKonu.dersId;
+      }
+    }
+
+    const seciliDersId = varsayilanDersId;
+    const seciliKaynakId = mevcutGorev ? (mevcutGorev.kaynakId || '') : (kaynakId || '');
+    const kaynaklar = Store.getKaynaklar();
 
     const dersOptions = dersler.map(d =>
       `<option value="${d.id}" ${d.id === seciliDersId ? 'selected' : ''}>${d.ad}</option>`
+    ).join('');
+
+    const kaynakOptions = kaynaklar.map(k =>
+      `<option value="${k.id}" ${k.id === seciliKaynakId ? 'selected' : ''}>${k.yayinevi} - ${k.ad}</option>`
     ).join('');
 
     const presetChips = [
@@ -1440,6 +2477,22 @@ const App = {
             </div>
           </div>
 
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Kaynak / Yayın</label>
+              <select id="grv-kaynak" class="select-instrument w-full p-2">
+                <option value="">— Genel / Kaynaksız —</option>
+                ${kaynakOptions}
+              </select>
+            </div>
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Görev Durumu</label>
+              <select id="grv-durum" class="select-instrument w-full p-2">
+                ${durumOptions}
+              </select>
+            </div>
+          </div>
+
           <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Hedef Soru</label>
@@ -1453,13 +2506,6 @@ const App = {
               <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Teslim Tarihi</label>
               <input type="date" id="grv-deadline" value="${mevcutGorev ? (mevcutGorev.deadline || '') : ''}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
             </div>
-          </div>
-
-          <div>
-            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Görev Durumu</label>
-            <select id="grv-durum" class="select-instrument w-full p-2">
-              ${durumOptions}
-            </select>
           </div>
 
           <div>
@@ -1506,6 +2552,7 @@ const App = {
 
         const dersId = document.getElementById('grv-ders').value;
         const konuIdVal = document.getElementById('grv-konu').value;
+        const kaynakIdVal = document.getElementById('grv-kaynak')?.value || '';
         const baslik = document.getElementById('grv-baslik').value.trim();
         const hedefSoru = Number(document.getElementById('grv-hedef').value) || 0;
         const sureDk = Number(document.getElementById('grv-sure').value) || 0;
@@ -1520,13 +2567,13 @@ const App = {
 
         if (isEdit) {
           Store.updateGorev(gorevId, {
-            dersId, konuId: konuIdVal, baslik, hedefSoru, sureDk, deadline, durum, not
+            dersId, konuId: konuIdVal, kaynakId: kaynakIdVal, baslik, hedefSoru, sureDk, deadline, durum, not
           });
           this.showToast('Görev güncellendi');
         } else {
           Store.addGorev({
             ogrenciId: ogr.id,
-            dersId, konuId: konuIdVal, baslik, hedefSoru, sureDk, deadline, durum, not
+            dersId, konuId: konuIdVal, kaynakId: kaynakIdVal, baslik, hedefSoru, sureDk, deadline, durum, not
           });
           this.showToast('Görev eklendi');
         }
