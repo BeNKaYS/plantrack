@@ -223,8 +223,8 @@ const App = {
 
     if (sidebarModulBadge && sidebarModulText) {
       if (aktifOgrenci) {
-        const modul = this.getAktifModul();
-        const modulAd = modul ? modul.ad : 'Modül';
+        const modul = Store.getModulForOgrenci(aktifOgrenci);
+        const modulAd = modul ? modul.ad : (aktifOgrenci.modulId || 'Modül');
         const sinifText = aktifOgrenci.sinif ? `${aktifOgrenci.sinif}. Sınıf` : '';
         sidebarModulText.textContent = sinifText ? `${modulAd} · ${sinifText}` : modulAd;
         sidebarModulBadge.classList.remove('hidden');
@@ -237,8 +237,9 @@ const App = {
     const activeStudentBadge = document.getElementById('active-student-badge');
     if (activeStudentBadge) {
       if (aktifOgrenci) {
-        const modul = this.getAktifModul();
-        activeStudentBadge.textContent = `${aktifOgrenci.ad || ''} ${aktifOgrenci.soyad || ''} (${modul ? modul.ad : ''})`;
+        const modul = Store.getModulForOgrenci(aktifOgrenci);
+        const modulAd = modul ? modul.ad : (aktifOgrenci.modulId || '');
+        activeStudentBadge.textContent = `${aktifOgrenci.ad || ''} ${aktifOgrenci.soyad || ''}${modulAd ? ` (${modulAd})` : ''}`;
         activeStudentBadge.classList.remove('hidden');
       } else {
         activeStudentBadge.classList.add('hidden');
@@ -2586,6 +2587,7 @@ const App = {
 
   selectModulFilter(modulId) {
     Store.setAktifModul(modulId);
+    Store.setAktifOgrenci(''); // Modül değiştiğinde aktif öğrenciyi deaktif et
     this.overviewSinifFilter = '';
     this.closeModal();
     this.updateGlobalBadges();
