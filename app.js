@@ -4,10 +4,12 @@
 
 const App = {
   currentView: 'overview',
+  currentTheme: localStorage.getItem('plantrack_theme') || 'dark',
   toastTimeout: null,
 
   init() {
     Store.init();
+    this.applyTheme(this.currentTheme);
     this.bindEvents();
     this.initSidebarResizer();
     this.populateStudentDropdown();
@@ -16,6 +18,27 @@ const App = {
     if (window.lucide) {
       lucide.createIcons();
     }
+  },
+
+  applyTheme(theme) {
+    this.currentTheme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('plantrack_theme', theme);
+
+    const icon = document.getElementById('theme-toggle-icon');
+    if (icon) {
+      // Koyu temada güneşi göster (açığa geçmek için), açık temada ayı göster (koyuya geçmek için)
+      icon.setAttribute('data-lucide', theme === 'dark' ? 'sun' : 'moon');
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+    }
+  },
+
+  toggleTheme() {
+    const nextTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
+    this.applyTheme(nextTheme);
+    this.showToast(nextTheme === 'dark' ? 'Koyu tema etkinleştirildi' : 'Açık tema etkinleştirildi');
   },
 
   getAktifModul() {
@@ -551,6 +574,12 @@ const App = {
     const overdueAlert = document.getElementById('topbar-overdue-alert');
     if (overdueAlert) {
       overdueAlert.addEventListener('click', () => this.navigateTo('cockpit'));
+    }
+
+    // Tema değiştirme butonu
+    const btnToggleTheme = document.getElementById('btn-toggle-theme');
+    if (btnToggleTheme) {
+      btnToggleTheme.addEventListener('click', () => this.toggleTheme());
     }
 
     // Logo tıklanınca overview'a git

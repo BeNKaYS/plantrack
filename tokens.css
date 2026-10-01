@@ -1,47 +1,11 @@
-/* Hallmark · tokens.css · theme: Cobalt / Workbench · anti-ai-slop design system */
+/* Hallmark · tokens.css · theme: Cobalt / Workbench · Light & Dark Modes */
+
+/* Shared Scales across themes */
 :root {
   /* Typography */
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-
-  /* Hallmark OKLCH Palette (Cobalt technical workbench on deep dark canvas) */
-  /* Anchor Hue: 250 (Cool Engineered Indigo / Cobalt) */
-  --color-paper:        oklch(14% 0.012 250);     /* Base background surface */
-  --color-paper-2:      oklch(17.5% 0.015 250);   /* Sidebar and elevated cards */
-  --color-paper-3:      oklch(21.5% 0.018 250);   /* Hover surfaces & active rows */
-  --color-paper-4:      oklch(26% 0.022 250);     /* Popovers, dropdowns & tooltips */
-
-  /* Hairlines & Rules */
-  --color-rule:         oklch(25% 0.014 250);     /* Subtle border hairline */
-  --color-rule-strong:  oklch(33% 0.020 250);     /* Prominent border / dividers */
-  --color-rule-hover:   oklch(40% 0.025 250);     /* Hover boundary */
-
-  /* Ink & Typography */
-  --color-ink:          oklch(95% 0.008 250);     /* Primary crisp text (never pure white) */
-  --color-ink-muted:    oklch(76% 0.012 250);     /* Secondary supporting text */
-  --color-ink-faint:    oklch(56% 0.014 250);     /* Captions, hotkeys, metadata */
-  --color-ink-ghost:    oklch(42% 0.012 250);     /* Disabled & structural text */
-
-  /* Signal & Accent (Strict Hallmark constraint: <3% viewport surface) */
-  --color-accent:       oklch(62% 0.21 254);      /* Electric Cobalt signal */
-  --color-accent-hover: oklch(67% 0.22 254);
-  --color-accent-subtle:oklch(22% 0.05 254);      /* Low-opacity tinted accent base */
-  --color-accent-border:oklch(38% 0.12 254);      /* Crisp accent hairline */
-  --color-focus:        oklch(68% 0.22 254);
-
-  /* Status Colors (Semantic with low-saturation tactile badges) */
-  --color-success:      oklch(68% 0.16 150);      /* Emerald signal */
-  --color-success-bg:   oklch(20% 0.04 150);
-  --color-success-border:oklch(32% 0.08 150);
-
-  --color-warning:      oklch(74% 0.16 75);       /* Amber signal */
-  --color-warning-bg:   oklch(22% 0.04 75);
-  --color-warning-border:oklch(36% 0.09 75);
-
-  --color-danger:       oklch(64% 0.21 28);       /* Crimson alert signal */
-  --color-danger-bg:    oklch(20% 0.05 28);
-  --color-danger-border:oklch(34% 0.11 28);
 
   /* Spacing Scale (Strict 4pt cadence) */
   --space-1: 4px;
@@ -61,15 +25,117 @@
   --radius-lg: 10px;
   --radius-full: 9999px;
 
-  /* Animation & Motion (Transforms & Opacity only; no layout bounce) */
+  /* Animation & Motion (Transforms & Opacity only) */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --dur-fast: 120ms;
   --dur-base: 180ms;
 
-  /* Elevation Shadows */
+  --sidebar-default-width: 270px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   KOYU TEMA (Default: Dark Technical Workbench)
+   Anchor Hue: 250 (Cool Cobalt / Engineered Slate)
+───────────────────────────────────────────────────────────── */
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --color-paper:        oklch(14% 0.012 250);     /* Base canvas */
+  --color-paper-2:      oklch(17.5% 0.015 250);   /* Sidebar, toolbar, cards */
+  --color-paper-3:      oklch(21.5% 0.018 250);   /* Hover surfaces & active rows */
+  --color-paper-4:      oklch(26% 0.022 250);     /* Popovers, dropdowns */
+
+  /* Hairlines & Boundaries */
+  --color-rule:         oklch(25% 0.014 250);     /* Subtle border hairline */
+  --color-rule-strong:  oklch(33% 0.020 250);     /* Prominent border / dividers */
+  --color-rule-hover:   oklch(40% 0.025 250);     /* Hover boundary */
+
+  /* Ink & Typography */
+  --color-ink:          oklch(95% 0.008 250);     /* Primary crisp text */
+  --color-ink-muted:    oklch(76% 0.012 250);     /* Secondary supporting text */
+  --color-ink-faint:    oklch(56% 0.014 250);     /* Captions, hotkeys, metadata */
+  --color-ink-ghost:    oklch(42% 0.012 250);     /* Disabled & structural text */
+
+  /* Signal & Accent (Cobalt: <3% viewport area) */
+  --color-accent:       oklch(62% 0.21 254);      /* Electric Cobalt signal */
+  --color-accent-hover: oklch(67% 0.22 254);
+  --color-accent-subtle:oklch(22% 0.05 254);      /* Low-opacity tinted accent base */
+  --color-accent-border:oklch(38% 0.12 254);      /* Crisp accent hairline */
+  --color-focus:        oklch(68% 0.22 254);
+
+  /* Status Colors */
+  --color-success:      oklch(68% 0.16 150);
+  --color-success-bg:   oklch(20% 0.04 150);
+  --color-success-border:oklch(32% 0.08 150);
+
+  --color-warning:      oklch(74% 0.16 75);
+  --color-warning-bg:   oklch(22% 0.04 75);
+  --color-warning-border:oklch(36% 0.09 75);
+
+  --color-danger:       oklch(64% 0.21 28);
+  --color-danger-bg:    oklch(20% 0.05 28);
+  --color-danger-border:oklch(34% 0.11 28);
+
+  /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 12px 32px -4px rgba(0, 0, 0, 0.60);
   --shadow-focus: 0 0 0 2px var(--color-paper), 0 0 0 4px var(--color-focus);
+
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='oklch(56% 0.014 250)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* ─────────────────────────────────────────────────────────────
+   AÇIK TEMA (Light Technical Workbench)
+   Anchor Hue: 250 (Cool Crisp Paper & High-Contrast Cobalt)
+───────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --color-paper:        oklch(98% 0.005 250);     /* Crisp engineered near-white */
+  --color-paper-2:      oklch(95.5% 0.008 250);   /* Sidebar, toolbar, cards */
+  --color-paper-3:      oklch(92% 0.012 250);     /* Hover surfaces & active rows */
+  --color-paper-4:      oklch(88% 0.016 250);     /* Popovers, dropdowns */
+
+  /* Hairlines & Boundaries */
+  --color-rule:         oklch(89% 0.010 250);     /* Clean hairline */
+  --color-rule-strong:  oklch(81% 0.016 250);     /* Structural dividers */
+  --color-rule-hover:   oklch(68% 0.025 250);
+
+  /* Ink & Typography */
+  --color-ink:          oklch(18% 0.015 250);     /* Deep engineered cobalt ink */
+  --color-ink-muted:    oklch(40% 0.018 250);     /* Secondary readable text */
+  --color-ink-faint:    oklch(54% 0.015 250);     /* Captions, metadata */
+  --color-ink-ghost:    oklch(70% 0.012 250);     /* Disabled & hotkeys */
+
+  /* Signal & Accent (Cobalt on Light) */
+  --color-accent:       oklch(50% 0.22 254);      /* High-contrast electric cobalt */
+  --color-accent-hover: oklch(44% 0.23 254);
+  --color-accent-subtle:oklch(93.5% 0.035 254);   /* Soft cobalt wash */
+  --color-accent-border:oklch(78% 0.10 254);
+  --color-focus:        oklch(50% 0.22 254);
+
+  /* Status Colors */
+  --color-success:      oklch(50% 0.16 150);
+  --color-success-bg:   oklch(94% 0.04 150);
+  --color-success-border:oklch(82% 0.09 150);
+
+  --color-warning:      oklch(56% 0.16 75);
+  --color-warning-bg:   oklch(95% 0.04 75);
+  --color-warning-border:oklch(83% 0.09 75);
+
+  --color-danger:       oklch(54% 0.22 28);
+  --color-danger-bg:    oklch(95% 0.04 28);
+  --color-danger-border:oklch(83% 0.10 28);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 32px -4px rgba(0, 0, 0, 0.12);
+  --shadow-focus: 0 0 0 2px var(--color-paper), 0 0 0 4px var(--color-focus);
+
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='oklch(40% 0.018 250)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }

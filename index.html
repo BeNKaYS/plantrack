@@ -36,11 +36,13 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
 
-  <!-- Dynamic Sidebar Width Style Tag & Flicker-prevention script -->
+  <!-- Dynamic Sidebar Width & Theme Initialization (Flicker-prevention script) -->
   <style id="sidebar-dynamic-width"></style>
   <script>
     (function() {
       try {
+        var savedTheme = localStorage.getItem('plantrack_theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
         var savedWidth = localStorage.getItem('plantrack_sidebar_width');
         if (savedWidth) {
           document.getElementById('sidebar-dynamic-width').textContent =
@@ -189,14 +191,19 @@
 
     <!-- Bölüm 3: Alt Kısım -->
     <div class="p-2.5 border-t border-[var(--color-rule)] space-y-2 bg-[var(--color-paper-2)]">
-      <!-- Yerel Depolama & Yedekleme -->
+      <!-- Yerel Depolama & Tema Değiştirici -->
       <div class="flex items-center justify-between px-2 py-1 bg-[var(--color-paper-3)] rounded-[var(--radius-sm)] border border-[var(--color-rule)]">
-        <span class="text-[10px] font-mono text-[var(--color-ink-faint)]">Yerel Depolama</span>
+        <div class="flex items-center gap-1.5">
+          <button id="btn-toggle-theme" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-4)] transition-colors cursor-pointer" title="Temayı Değiştir (Açık/Koyu)">
+            <i id="theme-toggle-icon" data-lucide="sun" class="w-3.5 h-3.5"></i>
+          </button>
+          <span class="text-[10px] font-mono text-[var(--color-ink-faint)]">Yerel Depolama</span>
+        </div>
         <div class="flex items-center gap-1">
-          <button id="btn-sidebar-import-json" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-4)] transition-colors" title="JSON Yedek Yükle">
+          <button id="btn-sidebar-import-json" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-4)] transition-colors cursor-pointer" title="JSON Yedek Yükle">
             <i data-lucide="upload" class="w-3.5 h-3.5"></i>
           </button>
-          <button id="btn-export-backup" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-4)] transition-colors" title="JSON Yedek İndir">
+          <button id="btn-export-backup" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-4)] transition-colors cursor-pointer" title="JSON Yedek İndir">
             <i data-lucide="download" class="w-3.5 h-3.5"></i>
           </button>
         </div>
