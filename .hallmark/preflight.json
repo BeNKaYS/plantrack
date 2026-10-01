@@ -1,0 +1,9 @@
+{
+  "scannedAt": "2026-10-01",
+  "fontStack": "Plus Jakarta Sans (body) + Space Grotesk (display) + JetBrains Mono (mono)",
+  "palette": "Slate / Dark modern minimal with Blue #3b82f6 accent",
+  "motion": "Vanilla CSS transitions / microinteractions",
+  "framework": "Vanilla JS, Tailwind CSS CDN",
+  "macrostructure": "Workbench",
+  "theme": "Cobalt"
+}
