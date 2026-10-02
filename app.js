@@ -62,6 +62,12 @@ const App = {
     this.applyTheme(this.currentTheme);
     this.bindEvents();
     this.initSidebarResizer();
+
+    if (!Store.data.kurulumTamamlandi) {
+      this.showSetupWizard();
+      return;
+    }
+
     this.populateStudentDropdown();
     this.updateSidebarCoachInfo();
     this.navigateTo('overview');
@@ -417,34 +423,54 @@ const App = {
     }
   },
 
-  openConfirmModal(title, message, onConfirm) {
-    const html = `
-      <div class="space-y-4">
-        <div class="flex items-center gap-3 pb-3 border-b border-[var(--color-rule)]">
-          <div class="w-8 h-8 rounded-full bg-[var(--color-danger-bg)] text-[var(--color-danger)] flex items-center justify-center">
-            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+  confirmModal({ baslik = 'Emin misiniz?', mesaj = 'Bu işlem geri alınamaz.', onayMetni = 'Onayla', iptalMetni = 'Vazgeç', tehlikeli = true } = {}) {
+    return new Promise((resolve) => {
+      const html = `
+        <div class="space-y-4">
+          <div class="flex items-center gap-3 pb-3 border-b border-[var(--color-rule)]">
+            <div class="w-8 h-8 rounded-full ${tehlikeli ? 'bg-[var(--color-danger-bg)] text-[var(--color-danger)]' : 'bg-[var(--color-paper-3)] text-[var(--color-accent)]'} flex items-center justify-center shrink-0">
+              <i data-lucide="${tehlikeli ? 'alert-triangle' : 'help-circle'}" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h3 class="font-display font-bold text-base text-[var(--color-ink)]">${baslik}</h3>
+              <p class="text-xs text-[var(--color-ink-muted)]">İşlem onayı gereklidir.</p>
+            </div>
           </div>
-          <div>
-            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">${title}</h3>
-            <p class="text-xs text-[var(--color-ink-muted)]">Bu işlem geri alınamaz.</p>
+          <p class="text-sm text-[var(--color-ink)] leading-relaxed">${mesaj}</p>
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
+            <button id="btn-modal-cancel" type="button" class="btn-tactile btn-tactile-ghost">${iptalMetni}</button>
+            <button id="btn-modal-confirm" type="button" class="btn-tactile ${tehlikeli ? 'bg-[var(--color-danger)] text-white hover:opacity-90' : 'btn-tactile-primary'}">${onayMetni}</button>
           </div>
         </div>
-        <p class="text-sm text-[var(--color-ink)]">${message}</p>
-        <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
-          <button onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">Vazgeç</button>
-          <button id="btn-confirm-action" class="btn-tactile bg-[var(--color-danger)] text-white hover:opacity-90">Onayla ve Sil</button>
-        </div>
-      </div>
-    `;
-    this.openModal(html);
+      `;
+      this.openModal(html);
 
-    const btn = document.getElementById('btn-confirm-action');
-    if (btn) {
-      btn.addEventListener('click', () => {
+      const btnConfirm = document.getElementById('btn-modal-confirm');
+      const btnCancel = document.getElementById('btn-modal-cancel');
+
+      let handled = false;
+      const onConfirm = () => {
+        if (handled) return;
+        handled = true;
         this.closeModal();
-        if (typeof onConfirm === 'function') onConfirm();
-      });
-    }
+        resolve(true);
+      };
+      const onCancel = () => {
+        if (handled) return;
+        handled = true;
+        this.closeModal();
+        resolve(false);
+      };
+
+      if (btnConfirm) btnConfirm.addEventListener('click', onConfirm);
+      if (btnCancel) btnCancel.addEventListener('click', onCancel);
+    });
+  },
+
+  openConfirmModal(title, message, onConfirm) {
+    this.confirmModal({ baslik: title, mesaj: message, onayMetni: 'Onayla ve Sil', tehlikeli: true }).then(ok => {
+      if (ok && typeof onConfirm === 'function') onConfirm();
+    });
   },
 
   showToast(msg, duration = 3000) {
@@ -6043,72 +6069,660 @@ const App = {
     }
   },
 
-  openCoachSettingsModal() {
+  // ─────────────────────────────────────────────────────────────
+  // PROMPT 8: İLK KURULUM SİHİRBAZI & KOÇ AYARLARI
+  // ─────────────────────────────────────────────────────────────
+  wizardState: {
+    adim: 1,
+    veri: {
+      kocAd: '',
+      kocSoyad: '',
+      kocUnvan: 'Koç',
+      kocKurum: '',
+      kocTel: '',
+      ogrAd: '',
+      ogrSoyad: '',
+      ogrSinif: '8',
+      ogrOkul: '',
+      ogrRenk: 'teal',
+      modulId: 'lgs',
+      ogretimYili: '2025-2026'
+    }
+  },
+
+  showSetupWizard() {
+    const wizardEl = document.getElementById('setup-wizard');
+    if (!wizardEl) return;
+
     const koc = Store.getKocProfili();
+    this.wizardState.adim = 1;
+    this.wizardState.veri.kocAd = koc.ad || '';
+    this.wizardState.veri.kocSoyad = koc.soyad || '';
+    this.wizardState.veri.kocUnvan = koc.unvan || 'Koç';
+    this.wizardState.veri.kocKurum = koc.kurum || '';
+    this.wizardState.veri.kocTel = koc.telefon || '';
+    this.wizardState.veri.ogretimYili = Store.data.ogretimYili || '2025-2026';
+
+    wizardEl.classList.remove('hidden');
+    wizardEl.classList.add('flex');
+    this.wizardRenderAdim(1);
+  },
+
+  wizardRenderAdim(adim) {
+    this.wizardState.adim = adim;
+    const body = document.getElementById('wizard-body');
+    const progressBar = document.getElementById('wizard-progress-bar');
+    const btnBack = document.getElementById('wizard-btn-back');
+    const btnNext = document.getElementById('wizard-btn-next');
+    const dotsContainer = document.getElementById('wizard-dots');
+
+    if (!body || !progressBar || !btnBack || !btnNext || !dotsContainer) return;
+
+    // İlerleme çubuğu
+    progressBar.style.width = `${adim * 25}%`;
+
+    // Geri butonu
+    if (adim === 1) {
+      btnBack.classList.add('hidden');
+    } else {
+      btnBack.classList.remove('hidden');
+    }
+
+    // Devam / Başla butonu
+    if (adim === 4) {
+      btnNext.innerHTML = '<span>Başla!</span> <i data-lucide="sparkles" class="w-4 h-4 inline ml-1"></i>';
+      btnNext.className = 'btn-tactile btn-tactile-primary text-xs py-2 px-6 font-bold shadow-md bg-[var(--color-accent)] text-white hover:opacity-90';
+    } else {
+      btnNext.innerHTML = '<span>Devam Et</span> <i data-lucide="arrow-right" class="w-4 h-4 inline ml-1"></i>';
+      btnNext.className = 'btn-tactile btn-tactile-primary text-xs py-2 px-5 font-semibold';
+    }
+
+    // Adım noktaları
+    dotsContainer.innerHTML = [1, 2, 3, 4].map(i => {
+      const isActive = i === adim;
+      return `<div class="transition-all duration-200 ${isActive ? 'w-6 h-1.5 bg-[var(--color-accent)] rounded-full' : 'w-1.5 h-1.5 rounded-full bg-[var(--color-paper-4)]'}"></div>`;
+    }).join('');
+
+    const v = this.wizardState.veri;
+
+    // ADIM 1: KOÇ BİLGİLERİ
+    if (adim === 1) {
+      body.innerHTML = `
+        <div class="space-y-5">
+          <div class="space-y-1">
+            <div class="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-accent)] uppercase tracking-wider font-mono">
+              <span>Adım 1 / 4</span>
+            </div>
+            <h2 class="text-xl font-display font-bold text-[var(--color-ink)]">Plantrack'e Hoş Geldiniz</h2>
+            <p class="text-xs text-[var(--color-ink-muted)]">Raporlarda, haftalık çalışma planlarında ve A4 çıktılarda yer alacak bilgilerinizi girin.</p>
+          </div>
+
+          <div class="space-y-3.5 text-xs">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Adınız <span class="text-[var(--color-danger)]">*</span></label>
+                <input type="text" id="wizard-koc-ad" value="${v.kocAd || ''}" required class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="Örn: Eren">
+              </div>
+              <div>
+                <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Soyadınız <span class="text-[var(--color-danger)]">*</span></label>
+                <input type="text" id="wizard-koc-soyad" value="${v.kocSoyad || ''}" required class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="Örn: Kaya">
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Unvan</label>
+              <select id="wizard-koc-unvan" class="select-instrument w-full p-2.5">
+                <option value="Koç" ${v.kocUnvan === 'Koç' ? 'selected' : ''}>Koç</option>
+                <option value="Eğitim Danışmanı" ${v.kocUnvan === 'Eğitim Danışmanı' ? 'selected' : ''}>Eğitim Danışmanı</option>
+                <option value="Öğretmen" ${v.kocUnvan === 'Öğretmen' ? 'selected' : ''}>Öğretmen</option>
+                <option value="Veli" ${v.kocUnvan === 'Veli' ? 'selected' : ''}>Veli</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Kurum / Okul (Opsiyonel)</label>
+              <input type="text" id="wizard-koc-kurum" value="${v.kocKurum || ''}" class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="Örn: Plantrack Akademi">
+            </div>
+
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">İletişim / Telefon (Opsiyonel)</label>
+              <input type="tel" id="wizard-koc-tel" value="${v.kocTel || ''}" class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="05XX XXX XX XX">
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ADIM 2: İLK ÖĞRENCİYİ EKLE
+    else if (adim === 2) {
+      const siniflar = typeof SINIFLAR !== 'undefined' ? SINIFLAR : [];
+      const renkler = ['teal', 'blue', 'indigo', 'rose', 'amber', 'emerald'];
+      const seciliSinifObj = siniflar.find(s => String(s.deger) === String(v.ogrSinif)) || siniflar[0];
+      const seciliModul = typeof MODULLER !== 'undefined' ? MODULLER.find(m => m.id === (seciliSinifObj ? seciliSinifObj.modulId : 'lgs')) : null;
+
+      body.innerHTML = `
+        <div class="space-y-5">
+          <div class="space-y-1">
+            <div class="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-accent)] uppercase tracking-wider font-mono">
+              <span>Adım 2 / 4</span>
+            </div>
+            <h2 class="text-xl font-display font-bold text-[var(--color-ink)]">İlk Öğrenciyi Ekleyelim</h2>
+            <p class="text-xs text-[var(--color-ink-muted)]">Takibini yapacağınız ilk öğrenciyi tanımlayın. Daha sonra dilediğiniz kadar öğrenci ekleyebilirsiniz.</p>
+          </div>
+
+          <div class="space-y-3.5 text-xs">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Öğrenci Adı <span class="text-[var(--color-danger)]">*</span></label>
+                <input type="text" id="wizard-ogr-ad" value="${v.ogrAd || ''}" required class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="Örn: Caner">
+              </div>
+              <div>
+                <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Öğrenci Soyadı <span class="text-[var(--color-danger)]">*</span></label>
+                <input type="text" id="wizard-ogr-soyad" value="${v.ogrSoyad || ''}" required class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="Örn: Yılmaz">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Sınıf / Kademe</label>
+                <select id="wizard-ogr-sinif" onchange="App.onWizardSinifChange(this.value)" class="select-instrument w-full p-2.5">
+                  ${siniflar.map(s => `
+                    <option value="${s.deger}" ${String(s.deger) === String(v.ogrSinif) ? 'selected' : ''}>
+                      ${s.label}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+              <div>
+                <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Okul (Opsiyonel)</label>
+                <input type="text" id="wizard-ogr-okul" value="${v.ogrOkul || ''}" class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="Örn: Atatürk Ortaokulu">
+              </div>
+            </div>
+
+            <!-- Modül Rozeti Önizleme -->
+            <div class="p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] flex items-center justify-between">
+              <span class="text-[11px] text-[var(--color-ink-muted)]">Otomatik Atanan Eğitim Modülü:</span>
+              <span id="wizard-modul-badge" class="meta-pill font-mono font-semibold text-[var(--color-accent)]">
+                ${seciliModul ? seciliModul.ad : 'LGS'}
+              </span>
+            </div>
+
+            <!-- Avatar Renk Seçici -->
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1.5">Avatar Teması</label>
+              <div class="flex items-center gap-2">
+                ${renkler.map(r => `
+                  <label class="cursor-pointer">
+                    <input type="radio" name="wizard-renk" value="${r}" class="sr-only peer" ${v.ogrRenk === r ? 'checked' : ''} onchange="App.wizardState.veri.ogrRenk = '${r}'">
+                    <div class="w-7 h-7 rounded-full bg-${r}-500 border-2 border-transparent peer-checked:border-[var(--color-ink)] transition-all"></div>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ADIM 3: ÖĞRETİM YILI & MODÜL
+    else if (adim === 3) {
+      const yillar = ['2023-2024', '2024-2025', '2025-2026', '2026-2027'];
+      const moduller = typeof MODULLER !== 'undefined' ? MODULLER : [];
+
+      body.innerHTML = `
+        <div class="space-y-5">
+          <div class="space-y-1">
+            <div class="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-accent)] uppercase tracking-wider font-mono">
+              <span>Adım 3 / 4</span>
+            </div>
+            <h2 class="text-xl font-display font-bold text-[var(--color-ink)]">Öğretim Yılını ve Modülü Seçin</h2>
+            <p class="text-xs text-[var(--color-ink-muted)]">Platformun varsayılan çalışma dönemini ve başlangıç modülünü belirleyin.</p>
+          </div>
+
+          <div class="space-y-4 text-xs">
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Öğretim Yılı</label>
+              <select id="wizard-yil" onchange="App.wizardState.veri.ogretimYili = this.value" class="select-instrument w-full p-2.5">
+                ${yillar.map(y => `
+                  <option value="${y}" ${v.ogretimYili === y ? 'selected' : ''}>${y} Eğitim-Öğretim Yılı</option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-2">Başlangıç Aktif Modülü</label>
+              <div class="grid grid-cols-1 gap-2.5">
+                ${moduller.map(m => {
+                  const isSelected = v.modulId === m.id;
+                  return `
+                    <div onclick="App.wizardState.veri.modulId = '${m.id}'; App.wizardRenderAdim(3);" class="p-3 rounded-[var(--radius-md)] border transition-all cursor-pointer flex items-center justify-between ${isSelected ? 'bg-[var(--color-paper-3)] border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]' : 'bg-[var(--color-paper-2)] border-[var(--color-rule)] hover:border-[var(--color-rule-strong)]'}">
+                      <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-[var(--radius-sm)] ${isSelected ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-paper-4)] text-[var(--color-ink-muted)]'} flex items-center justify-center font-bold text-xs font-mono">
+                          ${m.kod || m.id.substring(0, 3).toUpperCase()}
+                        </div>
+                        <div>
+                          <div class="font-display font-bold text-xs text-[var(--color-ink)]">${m.ad}</div>
+                          <div class="text-[10px] text-[var(--color-ink-faint)]">${m.aciklama || ''}</div>
+                        </div>
+                      </div>
+                      ${isSelected ? '<i data-lucide="check-circle-2" class="w-4 h-4 text-[var(--color-accent)]"></i>' : ''}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ADIM 4: HAZIR & ÖZET
+    else if (adim === 4) {
+      const modul = typeof MODULLER !== 'undefined' ? MODULLER.find(m => m.id === v.modulId) : null;
+      const sinifObj = typeof SINIFLAR !== 'undefined' ? SINIFLAR.find(s => String(s.deger) === String(v.ogrSinif)) : null;
+
+      body.innerHTML = `
+        <div class="space-y-5">
+          <div class="space-y-1">
+            <div class="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-accent)] uppercase tracking-wider font-mono">
+              <span>Adım 4 / 4 • Tamamlandı</span>
+            </div>
+            <h2 class="text-xl font-display font-bold text-[var(--color-ink)]">Her Şey Hazır!</h2>
+            <p class="text-xs text-[var(--color-ink-muted)]">Girdiğiniz bilgiler başarıyla hazırlandı. Bu ayarları dilediğiniz zaman sol alttaki profil panelinden güncelleyebilirsiniz.</p>
+          </div>
+
+          <div class="p-4 rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] space-y-3 text-xs">
+            <div class="flex items-center justify-between pb-2 border-b border-[var(--color-rule)]">
+              <span class="text-[var(--color-ink-muted)]">Danışman / Koç:</span>
+              <strong class="text-[var(--color-ink)] font-semibold">${v.kocAd} ${v.kocSoyad} (${v.kocUnvan || 'Koç'})</strong>
+            </div>
+
+            <div class="flex items-center justify-between pb-2 border-b border-[var(--color-rule)]">
+              <span class="text-[var(--color-ink-muted)]">Kurum / Organizasyon:</span>
+              <span class="text-[var(--color-ink)]">${v.kocKurum || 'Bireysel Koçluk'}</span>
+            </div>
+
+            <div class="flex items-center justify-between pb-2 border-b border-[var(--color-rule)]">
+              <span class="text-[var(--color-ink-muted)]">İlk Kayıtlı Öğrenci:</span>
+              <strong class="text-[var(--color-ink)] font-semibold">${v.ogrAd} ${v.ogrSoyad} (${sinifObj ? sinifObj.label : `${v.ogrSinif}. Sınıf`})</strong>
+            </div>
+
+            <div class="flex items-center justify-between pb-2 border-b border-[var(--color-rule)]">
+              <span class="text-[var(--color-ink-muted)]">Eğitim Kademesi / Modül:</span>
+              <span class="meta-pill text-[10px] font-mono text-[var(--color-accent)] font-semibold">${modul ? modul.ad : v.modulId}</span>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <span class="text-[var(--color-ink-muted)]">Öğretim Yılı:</span>
+              <span class="font-mono text-[var(--color-ink)]">${v.ogretimYili}</span>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center shrink-0">
+              <i data-lucide="check" class="w-4 h-4"></i>
+            </div>
+            <div class="text-[11px] text-[var(--color-ink-muted)]">
+              MEB ve ÖSYM müfredat ders havuzu, A4 çalışma çizelgeleri ve öğrenci takip kokpiti hazır hale getirildi.
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (window.lucide) lucide.createIcons();
+  },
+
+  onWizardSinifChange(sinifId) {
+    this.wizardState.veri.ogrSinif = sinifId;
+    const siniflar = typeof SINIFLAR !== 'undefined' ? SINIFLAR : [];
+    const sObj = siniflar.find(s => String(s.deger) === String(sinifId));
+    if (sObj && sObj.modulId) {
+      this.wizardState.veri.modulId = sObj.modulId;
+      const mod = typeof MODULLER !== 'undefined' ? MODULLER.find(m => m.id === sObj.modulId) : null;
+      const badge = document.getElementById('wizard-modul-badge');
+      if (badge && mod) {
+        badge.textContent = mod.ad;
+      }
+    }
+  },
+
+  wizardIleri() {
+    const adim = this.wizardState.adim;
+
+    if (adim === 1) {
+      const ad = document.getElementById('wizard-koc-ad')?.value.trim() || '';
+      const soyad = document.getElementById('wizard-koc-soyad')?.value.trim() || '';
+      const unvan = document.getElementById('wizard-koc-unvan')?.value || 'Koç';
+      const kurum = document.getElementById('wizard-koc-kurum')?.value.trim() || '';
+      const tel = document.getElementById('wizard-koc-tel')?.value.trim() || '';
+
+      if (!ad || !soyad) {
+        this.showToast('Lütfen ad ve soyadınızı girin.');
+        return;
+      }
+
+      this.wizardState.veri.kocAd = ad;
+      this.wizardState.veri.kocSoyad = soyad;
+      this.wizardState.veri.kocUnvan = unvan;
+      this.wizardState.veri.kocKurum = kurum;
+      this.wizardState.veri.kocTel = tel;
+      this.wizardRenderAdim(2);
+    } else if (adim === 2) {
+      const ad = document.getElementById('wizard-ogr-ad')?.value.trim() || '';
+      const soyad = document.getElementById('wizard-ogr-soyad')?.value.trim() || '';
+      const sinif = document.getElementById('wizard-ogr-sinif')?.value || '8';
+      const okul = document.getElementById('wizard-ogr-okul')?.value.trim() || '';
+
+      if (!ad || !soyad) {
+        this.showToast('Lütfen öğrenci ad ve soyadını girin.');
+        return;
+      }
+
+      this.wizardState.veri.ogrAd = ad;
+      this.wizardState.veri.ogrSoyad = soyad;
+      this.wizardState.veri.ogrSinif = sinif;
+      this.wizardState.veri.ogrOkul = okul;
+      this.wizardRenderAdim(3);
+    } else if (adim === 3) {
+      const yil = document.getElementById('wizard-yil')?.value || '2025-2026';
+      this.wizardState.veri.ogretimYili = yil;
+      this.wizardRenderAdim(4);
+    } else if (adim === 4) {
+      this.wizardTamamla();
+    }
+  },
+
+  wizardGeri() {
+    if (this.wizardState.adim > 1) {
+      this.wizardRenderAdim(this.wizardState.adim - 1);
+    }
+  },
+
+  wizardTamamla() {
+    const v = this.wizardState.veri;
+
+    // 1. Koç Profilini Güncelle
+    const ad = (v.kocAd || '').trim();
+    const soyad = (v.kocSoyad || '').trim();
+    Store.data.kocProfili = {
+      ad,
+      soyad,
+      unvan: v.kocUnvan || 'Eğitim Koçu',
+      kurum: (v.kocKurum || '').trim(),
+      telefon: (v.kocTel || '').trim(),
+      gunlukHedefSoru: 100,
+      avatarKisa: ((ad[0] || '') + (soyad[0] || '')).toUpperCase() || 'KD'
+    };
+
+    // 2. Öğretim Yılı ve Modülü Güncelle
+    Store.data.ogretimYili = v.ogretimYili || '2025-2026';
+    Store.data.aktifModulId = v.modulId || 'lgs';
+
+    // 3. İlk Öğrenciyi Ekle
+    const yeniOgr = Store.addOgrenci({
+      ad: v.ogrAd,
+      soyad: v.ogrSoyad,
+      sinif: v.ogrSinif,
+      okul: v.ogrOkul,
+      renk: v.ogrRenk || 'teal',
+      modulId: v.modulId || 'lgs'
+    });
+
+    // 4. Öğrenciyi Aktif Yap
+    Store.setAktifOgrenci(yeniOgr.id);
+
+    // 5. Kurulumu Tamamla ve Kaydet
+    Store.data.kurulumTamamlandi = true;
+    Store.save();
+
+    // 6. Sihirbazı Gizle
+    const wizardEl = document.getElementById('setup-wizard');
+    if (wizardEl) {
+      wizardEl.classList.add('hidden');
+      wizardEl.classList.remove('flex');
+    }
+
+    // 7. Arayüzü Başlat
+    this.populateStudentDropdown();
+    this.updateSidebarCoachInfo();
+    this.navigateTo('overview');
+    this.showToast('Hoş geldiniz! Plantrack hazır.');
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // KOÇ AYARLARI MODALI (3 Sekmeli)
+  // ─────────────────────────────────────────────────────────────
+  coachSettingsTab: 'profil', // 'profil' | 'app' | 'data'
+
+  openCoachSettingsModal(initialTab = 'profil') {
+    this.coachSettingsTab = initialTab;
+    const koc = Store.getKocProfili();
+    const ogretimYili = Store.data.ogretimYili || '2025-2026';
+    const aktifModulId = Store.data.aktifModulId || 'ara-sinif';
+    const moduller = typeof MODULLER !== 'undefined' ? MODULLER : [];
+    const yillar = ['2023-2024', '2024-2025', '2025-2026', '2026-2027'];
+
+    const renderTabContent = (tab) => {
+      if (tab === 'profil') {
+        return `
+          <form id="form-coach-profile" class="space-y-3.5 text-xs pt-2">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Ad <span class="text-[var(--color-danger)]">*</span></label>
+                <input type="text" id="settings-koc-ad" value="${koc.ad || ''}" required class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+              </div>
+              <div>
+                <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Soyad <span class="text-[var(--color-danger)]">*</span></label>
+                <input type="text" id="settings-koc-soyad" value="${koc.soyad || ''}" required class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Unvan</label>
+              <input type="text" id="settings-koc-unvan" value="${koc.unvan || ''}" class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="Örn: Eğitim Koçu & Danışman">
+            </div>
+
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Kurum / Organizasyon</label>
+              <input type="text" id="settings-koc-kurum" value="${koc.kurum || ''}" class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="Örn: Plantrack Koçluk">
+            </div>
+
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Telefon / İletişim</label>
+              <input type="tel" id="settings-koc-tel" value="${koc.telefon || ''}" class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="05XX XXX XX XX">
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
+              <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">Vazgeç</button>
+              <button type="submit" class="btn-tactile btn-tactile-primary">Profili Kaydet</button>
+            </div>
+          </form>
+        `;
+      } else if (tab === 'app') {
+        return `
+          <form id="form-coach-app" class="space-y-4 text-xs pt-2">
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Aktif Öğretim Yılı</label>
+              <select id="settings-ogretim-yili" class="select-instrument w-full p-2.5">
+                ${yillar.map(y => `
+                  <option value="${y}" ${ogretimYili === y ? 'selected' : ''}>${y} Eğitim-Öğretim Yılı</option>
+                `).join('')}
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-2">Varsayılan Eğitim Modülü</label>
+              <div class="grid grid-cols-1 gap-2">
+                ${moduller.map(m => {
+                  const isSelected = aktifModulId === m.id;
+                  return `
+                    <label class="p-3 rounded-[var(--radius-md)] border cursor-pointer flex items-center justify-between transition-all ${isSelected ? 'bg-[var(--color-paper-3)] border-[var(--color-accent)]' : 'bg-[var(--color-paper-2)] border-[var(--color-rule)]'}">
+                      <div class="flex items-center gap-2.5">
+                        <input type="radio" name="settings-modul" value="${m.id}" ${isSelected ? 'checked' : ''} class="text-[var(--color-accent)] focus:ring-0">
+                        <div>
+                          <div class="font-display font-bold text-xs text-[var(--color-ink)]">${m.ad}</div>
+                          <div class="text-[10px] text-[var(--color-ink-muted)]">${m.aciklama || ''}</div>
+                        </div>
+                      </div>
+                      <span class="meta-pill text-[10px] font-mono">${m.kod || m.id}</span>
+                    </label>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Varsayılan Günlük Hedef Soru (Genel)</label>
+              <input type="number" id="settings-hedef-soru" min="0" value="${koc.gunlukHedefSoru || 100}" class="w-full p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)] font-bold">
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
+              <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">Vazgeç</button>
+              <button type="submit" class="btn-tactile btn-tactile-primary">Ayarları Kaydet</button>
+            </div>
+          </form>
+        `;
+      } else if (tab === 'data') {
+        return `
+          <div class="space-y-4 text-xs pt-2">
+            <!-- 1. Yedek İndir -->
+            <div class="p-3.5 rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] flex items-center justify-between gap-3">
+              <div>
+                <h4 class="font-display font-bold text-xs text-[var(--color-ink)]">Tüm Verileri JSON Olarak İndir</h4>
+                <p class="text-[11px] text-[var(--color-ink-muted)] mt-0.5">Tüm öğrencileri, ödev geçmişini, sınav notlarını ve konu durumlarını dosya olarak kaydedin.</p>
+              </div>
+              <button onclick="App.exportBackup()" class="btn-tactile btn-tactile-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                <span>Yedek İndir</span>
+              </button>
+            </div>
+
+            <!-- 2. Yedek Yükle -->
+            <div class="p-3.5 rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] flex items-center justify-between gap-3">
+              <div>
+                <h4 class="font-display font-bold text-xs text-[var(--color-ink)]">JSON Yedek Dosyasından Geri Yükle</h4>
+                <p class="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">Mevcut tüm veriler silinir ve yedekteki verilerle değiştirilir.</p>
+              </div>
+              <button onclick="document.getElementById('input-import-json').click()" class="btn-tactile btn-tactile-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0">
+                <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                <span>Yedek Yükle</span>
+              </button>
+            </div>
+
+            <!-- 3. Fabrika Sıfırlama -->
+            <div class="p-3.5 rounded-[var(--radius-md)] bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 flex items-center justify-between gap-3">
+              <div>
+                <h4 class="font-display font-bold text-xs text-rose-700 dark:text-rose-400">Tüm Verileri Sil ve Sıfırla (Fabrika Ayarları)</h4>
+                <p class="text-[11px] text-[var(--color-ink-muted)] mt-0.5">Öğrenci, ödev ve not kayıtları kalıcı olarak temizlenir ve kurulum sihirbazı yeniden açılır.</p>
+              </div>
+              <button onclick="App.handleFactoryReset()" class="btn-tactile bg-rose-600 hover:bg-rose-700 text-white text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                <span>Sıfırla</span>
+              </button>
+            </div>
+          </div>
+        `;
+      }
+    };
+
     const html = `
       <div class="space-y-4">
+        <!-- Başlık -->
         <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
           <div>
-            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Koç Profili Ayarları</h3>
-            <p class="text-xs text-[var(--color-ink-muted)]">Rapor ve çıktılarda yer alan danışman bilgileri</p>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Koç & Platform Ayarları</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Profil, uygulama tercihleri ve veri yedekleme yönetimi</p>
           </div>
           <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
 
-        <form id="form-coach-settings" class="space-y-3 text-xs">
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Ad</label>
-              <input type="text" id="koc-ad" value="${koc.ad || ''}" required class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
-            </div>
-            <div>
-              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Soyad</label>
-              <input type="text" id="koc-soyad" value="${koc.soyad || ''}" required class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
-            </div>
-          </div>
+        <!-- Sekmeler -->
+        <div class="flex border-b border-[var(--color-rule)] gap-2">
+          <button onclick="App.openCoachSettingsModal('profil')" class="pb-2 text-xs font-semibold transition-all border-b-2 ${this.coachSettingsTab === 'profil' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'}">
+            Profil Bilgileri
+          </button>
+          <button onclick="App.openCoachSettingsModal('app')" class="pb-2 text-xs font-semibold transition-all border-b-2 ${this.coachSettingsTab === 'app' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'}">
+            Uygulama Ayarları
+          </button>
+          <button onclick="App.openCoachSettingsModal('data')" class="pb-2 text-xs font-semibold transition-all border-b-2 ${this.coachSettingsTab === 'data' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]'}">
+            Veri Yönetimi
+          </button>
+        </div>
 
-          <div>
-            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Unvan</label>
-            <input type="text" id="koc-unvan" value="${koc.unvan || ''}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
-          </div>
-
-          <div>
-            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Kurum / Organizasyon</label>
-            <input type="text" id="koc-kurum" value="${koc.kurum || ''}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
-          </div>
-
-          <div>
-            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Telefon / İletişim</label>
-            <input type="tel" id="koc-tel" value="${koc.telefon || ''}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
-          </div>
-
-          <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
-            <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">Vazgeç</button>
-            <button type="submit" class="btn-tactile btn-tactile-primary">Kaydet</button>
-          </div>
-        </form>
+        <!-- Sekme İçeriği -->
+        <div id="coach-settings-tab-content">
+          ${renderTabContent(this.coachSettingsTab)}
+        </div>
       </div>
     `;
 
     this.openModal(html);
 
-    const form = document.getElementById('form-coach-settings');
-    if (form) {
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const ad = document.getElementById('koc-ad').value.trim();
-        const soyad = document.getElementById('koc-soyad').value.trim();
-        const unvan = document.getElementById('koc-unvan').value.trim();
-        const kurum = document.getElementById('koc-kurum').value.trim();
-        const telefon = document.getElementById('koc-tel').value.trim();
+    // Form Event Listeners
+    if (this.coachSettingsTab === 'profil') {
+      const form = document.getElementById('form-coach-profile');
+      if (form) {
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const ad = document.getElementById('settings-koc-ad')?.value.trim() || '';
+          const soyad = document.getElementById('settings-koc-soyad')?.value.trim() || '';
+          const unvan = document.getElementById('settings-koc-unvan')?.value.trim() || '';
+          const kurum = document.getElementById('settings-koc-kurum')?.value.trim() || '';
+          const telefon = document.getElementById('settings-koc-tel')?.value.trim() || '';
 
-        Store.saveKocProfili({ ad, soyad, unvan, kurum, telefon });
-        this.updateSidebarCoachInfo();
-        this.closeModal();
-        this.showToast('Koç profili güncellendi');
-      });
+          if (!ad || !soyad) {
+            this.showToast('Lütfen ad ve soyad alanlarını doldurun.');
+            return;
+          }
+
+          Store.saveKocProfili({ ad, soyad, unvan, kurum, telefon });
+          this.updateSidebarCoachInfo();
+          this.closeModal();
+          this.showToast('Koç profili güncellendi.');
+        });
+      }
+    } else if (this.coachSettingsTab === 'app') {
+      const form = document.getElementById('form-coach-app');
+      if (form) {
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const yili = document.getElementById('settings-ogretim-yili')?.value || '2025-2026';
+          const seciliModulEl = document.querySelector('input[name="settings-modul"]:checked');
+          const modId = seciliModulEl ? seciliModulEl.value : 'ara-sinif';
+          const hedefSoru = Number(document.getElementById('settings-hedef-soru')?.value) || 100;
+
+          Store.data.ogretimYili = yili;
+          Store.setAktifModul(modId);
+          Store.data.kocProfili.gunlukHedefSoru = hedefSoru;
+          Store.save();
+
+          this.closeModal();
+          this.renderCurrentView();
+          this.showToast('Uygulama ayarları kaydedildi.');
+        });
+      }
+    }
+
+    if (window.lucide) lucide.createIcons();
+  },
+
+  async handleFactoryReset() {
+    const onay = await this.confirmModal({
+      baslik: 'Emin misiniz?',
+      mesaj: 'Tüm öğrenci kayıtları, ödevler, sınav notları ve konu ilerlemeleri kalıcı olarak silinecektir. Sistem başlangıç fabrika ayarlarına döndürülecektir.',
+      onayMetni: 'Fabrika Ayarlarına Sıfırla',
+      iptalMetni: 'İptal',
+      tehlikeli: true
+    });
+
+    if (onay) {
+      Store.resetToFactory();
+      this.closeModal();
+      this.showToast('Sistem sıfırlandı. Kurulum sihirbazı başlatılıyor...');
+      this.init();
     }
   },
 

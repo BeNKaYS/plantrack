@@ -9,6 +9,8 @@ const Store = {
   data: {
     version: '1.0.0',
     aktifModulId: 'ara-sinif',
+    kurulumTamamlandi: false,
+    ogretimYili: '2025-2026',
     kocProfili: {
       ad: 'Eren',
       soyad: 'Kaya',
@@ -38,6 +40,9 @@ const Store = {
       if (stored) {
         const parsed = JSON.parse(stored);
         this.data = Object.assign(this.getSeedData(), parsed);
+        if (typeof this.data.kurulumTamamlandi === 'undefined') {
+          this.data.kurulumTamamlandi = Boolean(this.data.ogrenciler && this.data.ogrenciler.length > 0);
+        }
       } else {
         this.data = this.getSeedData();
         this.save();
@@ -77,6 +82,8 @@ const Store = {
   getSeedData() {
     return {
       version: '1.0.0',
+      kurulumTamamlandi: false,
+      ogretimYili: '2025-2026',
       aktifModulId: 'ara-sinif',
       kocProfili: {
         ad: 'Eren',
@@ -234,6 +241,7 @@ const Store = {
       unvan: profil.unvan || 'Eğitim Koçu',
       kurum: profil.kurum || '',
       telefon: profil.telefon || '',
+      gunlukHedefSoru: Number(profil.gunlukHedefSoru) || 0,
       avatarKisa
     };
 
