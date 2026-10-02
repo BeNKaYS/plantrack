@@ -4913,28 +4913,31 @@ const App = {
     const selectEl = document.getElementById('cizelge-ogrenci-select');
     const ogrenciId = (selectEl ? selectEl.value : '') || this.cizelgeOgrenciId || Store.data.aktifOgrenciId;
     const ogr = Store.getOgrenci(ogrenciId);
-    if (!ogr) {
-      this.showToast('Lütfen önce bir öğrenci seçin');
-      return;
-    }
+
+    const printOgr = ogr || {
+      adSoyad: '........................................',
+      sinif: '.....',
+      modulId: 'lgs',
+      hedefSoru: ''
+    };
 
     let html = '';
     let yatay = false;
     switch (this.cizelgeAktifSablon) {
       case 'haftalik-plan':
-        html = this.renderCizelgeHaftalikPlanHTML(ogr);
+        html = this.renderCizelgeHaftalikPlanHTML(printOgr);
         yatay = false;
         break;
       case 'odev-takip':
-        html = this.renderCizelgeOdevTakipHTML(ogr);
+        html = this.renderCizelgeOdevTakipHTML(printOgr);
         yatay = false;
         break;
       case 'konu-takip':
-        html = this.renderCizelgeKonuTakipHTML(ogr);
+        html = this.renderCizelgeKonuTakipHTML(printOgr);
         yatay = true;
         break;
       default:
-        html = this.renderCizelgeHaftalikPlanHTML(ogr);
+        html = this.renderCizelgeHaftalikPlanHTML(printOgr);
         yatay = false;
         break;
     }
@@ -4951,13 +4954,13 @@ const App = {
     if (!container) return;
 
     const allStudents = Store.getOgrenciler();
-    if (!this.cizelgeOgrenciId) {
-      this.cizelgeOgrenciId = Store.data.aktifOgrenciId || (allStudents[0] ? allStudents[0].id : '');
+    if (!this.cizelgeOgrenciId && allStudents.length > 0) {
+      this.cizelgeOgrenciId = Store.data.aktifOgrenciId || allStudents[0].id;
     }
 
-    const ogr = Store.getOgrenci(this.cizelgeOgrenciId);
+    const ogr = this.cizelgeOgrenciId ? Store.getOgrenci(this.cizelgeOgrenciId) : null;
     const sablon = this.cizelgeAktifSablon || 'haftalik-plan';
-    const dersler = ogr ? Store.getDerslerForOgrenci(ogr) : [];
+    const dersler = (ogr && Store.getDerslerForOgrenci(ogr).length > 0) ? Store.getDerslerForOgrenci(ogr) : Store.getDersler();
 
     if (!this.cizelgeDersId && dersler.length > 0) {
       this.cizelgeDersId = dersler[0].id;
@@ -4980,7 +4983,7 @@ const App = {
             <div class="flex items-center gap-2">
               <label for="cizelge-ogrenci-select" class="text-xs font-medium text-[var(--color-ink-muted)]">Öğrenci:</label>
               <select id="cizelge-ogrenci-select" onchange="App.onCizelgeOgrenciChange(this.value)" class="select-instrument text-xs py-1.5 px-3 min-w-[170px]">
-                ${allStudents.length === 0 ? '<option value="">Öğrenci Bulunamadı</option>' : ''}
+                ${allStudents.length === 0 ? '<option value="">Boş Şablon (Öğrenci Yok)</option>' : ''}
                 ${allStudents.map(s => `
                   <option value="${s.id}" ${String(s.id) === String(this.cizelgeOgrenciId) ? 'selected' : ''}>
                     ${s.adSoyad} (${s.sinif ? `${s.sinif}. Sınıf` : ''})
@@ -5116,41 +5119,51 @@ const App = {
     const ogrenciId = (selectEl ? selectEl.value : '') || this.cizelgeOgrenciId || Store.data.aktifOgrenciId;
     const ogr = Store.getOgrenci(ogrenciId);
 
-    if (!ogr) {
-      previewContainer.className = 'w-full max-w-[820px] mx-auto bg-white text-slate-900 border border-[var(--color-rule)] shadow-xl rounded-xl p-12 text-center';
-      previewContainer.innerHTML = `
-        <div class="py-12 text-center text-slate-500">
-          <i data-lucide="users" class="w-10 h-10 mx-auto mb-3 opacity-40"></i>
-          <h4 class="font-display font-semibold text-sm text-slate-800">Çizelge Önizlemesi İçin Öğrenci Seçin</h4>
-          <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Yukarıdaki öğrenci listesinden bir öğrenci seçerek veya yeni öğrenci ekleyerek A4 çıktı şablonunu oluşturabilirsiniz.</p>
-        </div>
-      `;
-      if (window.lucide) lucide.createIcons();
-      return;
-    }
-
     const isLandscape = this.cizelgeAktifSablon === 'konu-takip';
     previewContainer.className = isLandscape
       ? 'w-full max-w-[1080px] mx-auto bg-white text-slate-900 border border-[var(--color-rule)] shadow-xl rounded-xl p-6 md:p-8 min-h-[640px] transition-all'
       : 'w-full max-w-[820px] mx-auto bg-white text-slate-900 border border-[var(--color-rule)] shadow-xl rounded-xl p-6 md:p-8 min-h-[960px] transition-all';
 
+    const displayOgr = ogr || {
+      adSoyad: '........................................',
+      sinif: '.....',
+      modulId: 'lgs',
+      hedefSoru: ''
+    };
+
     let html = '';
     switch (this.cizelgeAktifSablon) {
       case 'haftalik-plan':
-        html = this.renderCizelgeHaftalikPlanHTML(ogr);
+        html = this.renderCizelgeHaftalikPlanHTML(displayOgr);
         break;
       case 'odev-takip':
-        html = this.renderCizelgeOdevTakipHTML(ogr);
+        html = this.renderCizelgeOdevTakipHTML(displayOgr);
         break;
       case 'konu-takip':
-        html = this.renderCizelgeKonuTakipHTML(ogr);
+        html = this.renderCizelgeKonuTakipHTML(displayOgr);
         break;
       default:
-        html = this.renderCizelgeHaftalikPlanHTML(ogr);
+        html = this.renderCizelgeHaftalikPlanHTML(displayOgr);
         break;
     }
 
-    previewContainer.innerHTML = html;
+    if (!ogr) {
+      const banner = `
+        <div class="mb-4 p-3 rounded-[var(--radius-md)] bg-blue-50/90 border border-blue-200 text-blue-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+          <div class="flex items-center gap-2">
+            <i data-lucide="info" class="w-4 h-4 text-blue-600 flex-shrink-0"></i>
+            <span>Sistemde henüz kayıtlı öğrenci seçilmedi. Aşağıda <strong>boş el ile doldurulabilir A4 çıktısı</strong> önizlenmektedir. Dilerseniz hemen yazdırabilir veya öğrenci ekleyebilirsiniz.</span>
+          </div>
+          <button onclick="App.openOgrenciModal()" class="btn-tactile bg-blue-600 text-white hover:bg-blue-700 text-xs py-1 px-3 flex-shrink-0 whitespace-nowrap">
+            + Yeni Öğrenci Ekle
+          </button>
+        </div>
+      `;
+      previewContainer.innerHTML = banner + html;
+    } else {
+      previewContainer.innerHTML = html;
+    }
+
     if (window.lucide) lucide.createIcons();
   },
 
@@ -5392,7 +5405,7 @@ const App = {
   renderCizelgeKonuTakipHTML(ogr) {
     const koc = Store.getKocProfili();
     const bugunTarih = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
-    const dersler = ogr ? Store.getDerslerForOgrenci(ogr) : [];
+    const dersler = (ogr && Store.getDerslerForOgrenci(ogr).length > 0) ? Store.getDerslerForOgrenci(ogr) : Store.getDersler();
     const seciliDersId = this.cizelgeDersId || (dersler[0] ? dersler[0].id : '');
     const ders = Store.getDers(seciliDersId);
     const konular = seciliDersId ? Store.getKonularForDers(seciliDersId) : [];
