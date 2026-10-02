@@ -45,6 +45,18 @@ const App = {
   studentsModulFilter: '',
   studentsSearchQuery: '',
 
+  // Çizelge Robotu State
+  cizelgeAktifSablon: 'haftalik-plan', // 'haftalik-plan' | 'odev-takip' | 'konu-takip'
+  cizelgeOgrenciId: '',
+  cizelgeDersId: '',
+  cizelgeKonuBosMod: false, // false: Mevcut Durumları Doldur, true: Boş Şablon
+  cizelgeGorevleriYerlestir: true, // Görevleri günlere dağıt
+
+  // Sınav Notları State
+  sinavNotlariDersFilter: '', // '' (Tümü) veya dersId
+  sinavNotlariTurFilter: '', // '' (Tümü) veya 'yazili' | 'sozlu' | 'proje' | 'kisa-sinav'
+  sinavNotlariAktifDersId: '', // Trend grafiği için aktif ders
+
   init() {
     Store.init();
     this.applyTheme(this.currentTheme);
@@ -184,6 +196,7 @@ const App = {
         this.renderHataDefteri();
         break;
       case 'cizelge-robotu':
+        this.renderCizelgeRobotu();
         break;
       case 'curriculum-pool':
         this.renderCurriculumPool();
@@ -195,6 +208,7 @@ const App = {
         this.renderStudents();
         break;
       case 'sinav-notlari':
+        this.renderSinavNotlari();
         break;
       default:
         break;
@@ -4847,6 +4861,1172 @@ const App = {
       } else {
         this.openOgrenciModal();
       }
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // VIEW: ÇİZELGE ROBOTU (renderCizelgeRobotu)
+  // ─────────────────────────────────────────────────────────────
+  setCizelgeSablon(sablon) {
+    this.cizelgeAktifSablon = sablon;
+    this.renderCizelgeRobotu();
+  },
+
+  onCizelgeOgrenciChange(ogrId) {
+    this.cizelgeOgrenciId = ogrId;
+    this.cizelgeDersId = '';
+    this.renderCizelgeRobotu();
+  },
+
+  setCizelgeAktifOgrenci() {
+    const aktifId = Store.data.aktifOgrenciId;
+    if (!aktifId) {
+      this.showToast('Lütfen önce üst panelden bir aktif öğrenci belirleyin.');
+      return;
+    }
+    this.cizelgeOgrenciId = aktifId;
+    this.cizelgeDersId = '';
+    const selectEl = document.getElementById('cizelge-ogrenci-select');
+    if (selectEl) {
+      selectEl.value = aktifId;
+    }
+    this.renderCizelgeRobotu();
+    this.showToast('Aktif öğrenci şablona yerleştirildi.');
+  },
+
+  onCizelgeDersChange(dersId) {
+    this.cizelgeDersId = dersId;
+    this.renderCizelgePreview();
+  },
+
+  toggleCizelgeGorevleriYerlestir() {
+    this.cizelgeGorevleriYerlestir = !this.cizelgeGorevleriYerlestir;
+    this.renderCizelgePreview();
+  },
+
+  toggleCizelgeKonuBosMod() {
+    this.cizelgeKonuBosMod = !this.cizelgeKonuBosMod;
+    this.renderCizelgePreview();
+  },
+
+  printCizelge() {
+    const selectEl = document.getElementById('cizelge-ogrenci-select');
+    const ogrenciId = (selectEl ? selectEl.value : '') || this.cizelgeOgrenciId || Store.data.aktifOgrenciId;
+    const ogr = Store.getOgrenci(ogrenciId);
+    if (!ogr) {
+      this.showToast('Lütfen önce bir öğrenci seçin');
+      return;
+    }
+
+    let html = '';
+    let yatay = false;
+    switch (this.cizelgeAktifSablon) {
+      case 'haftalik-plan':
+        html = this.renderCizelgeHaftalikPlanHTML(ogr);
+        yatay = false;
+        break;
+      case 'odev-takip':
+        html = this.renderCizelgeOdevTakipHTML(ogr);
+        yatay = false;
+        break;
+      case 'konu-takip':
+        html = this.renderCizelgeKonuTakipHTML(ogr);
+        yatay = true;
+        break;
+      default:
+        html = this.renderCizelgeHaftalikPlanHTML(ogr);
+        yatay = false;
+        break;
+    }
+
+    if (typeof PrintEngine !== 'undefined' && PrintEngine.yazdir) {
+      PrintEngine.yazdir(html, { yatay });
+    } else {
+      window.print();
+    }
+  },
+
+  renderCizelgeRobotu() {
+    const container = document.getElementById('view-cizelge-robotu');
+    if (!container) return;
+
+    const allStudents = Store.getOgrenciler();
+    if (!this.cizelgeOgrenciId) {
+      this.cizelgeOgrenciId = Store.data.aktifOgrenciId || (allStudents[0] ? allStudents[0].id : '');
+    }
+
+    const ogr = Store.getOgrenci(this.cizelgeOgrenciId);
+    const sablon = this.cizelgeAktifSablon || 'haftalik-plan';
+    const dersler = ogr ? Store.getDerslerForOgrenci(ogr) : [];
+
+    if (!this.cizelgeDersId && dersler.length > 0) {
+      this.cizelgeDersId = dersler[0].id;
+    }
+
+    const html = `
+      <div class="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
+        <!-- BÖLÜM 1: ARAÇ ÇUBUĞU -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[var(--color-rule)]">
+          <div>
+            <div class="flex items-center gap-3">
+              <h1 class="text-xl font-bold font-display text-[var(--color-ink)]">Çizelge Robotu</h1>
+              <span class="meta-pill">A4 Şablon Motoru</span>
+            </div>
+            <p class="text-xs text-[var(--color-ink-muted)] mt-1">Öğrenciye özel kişiselleştirilmiş A4 çalışma planları, ödev çizelgeleri ve konu takip çıktıları hazırlayın.</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2.5">
+            <!-- Öğrenci Seçici -->
+            <div class="flex items-center gap-2">
+              <label for="cizelge-ogrenci-select" class="text-xs font-medium text-[var(--color-ink-muted)]">Öğrenci:</label>
+              <select id="cizelge-ogrenci-select" onchange="App.onCizelgeOgrenciChange(this.value)" class="select-instrument text-xs py-1.5 px-3 min-w-[170px]">
+                ${allStudents.length === 0 ? '<option value="">Öğrenci Bulunamadı</option>' : ''}
+                ${allStudents.map(s => `
+                  <option value="${s.id}" ${String(s.id) === String(this.cizelgeOgrenciId) ? 'selected' : ''}>
+                    ${s.adSoyad} (${s.sinif ? `${s.sinif}. Sınıf` : ''})
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+
+            <!-- Aktif Öğrenciyi Doldur Butonu -->
+            <button onclick="App.setCizelgeAktifOgrenci()" class="btn-tactile btn-tactile-secondary text-xs py-1.5 px-3 inline-flex items-center gap-1.5" title="Üst paneldeki aktif öğrenciyi seç">
+              <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+              <span>Aktif Öğrenciyi Doldur</span>
+            </button>
+
+            <!-- Yazdır Butonu -->
+            <button onclick="App.printCizelge()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-4 inline-flex items-center gap-2 shadow-sm">
+              <i data-lucide="printer" class="w-4 h-4"></i>
+              <span>Yazdır (A4)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- BÖLÜM 2: ŞABLON SEÇİCİ KARTLARI -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- Şablon 1: Haftalık Plan -->
+          <div onclick="App.setCizelgeSablon('haftalik-plan')" class="p-4 rounded-[var(--radius-md)] border transition-all cursor-pointer ${sablon === 'haftalik-plan' ? 'bg-[var(--color-paper-3)] border-[var(--color-accent)] ring-1 ring-[var(--color-accent)] shadow-sm' : 'bg-[var(--color-paper-2)] border-[var(--color-rule)] hover:border-[var(--color-rule-strong)]'}">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-[var(--radius-sm)] ${sablon === 'haftalik-plan' ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-paper-4)] text-[var(--color-ink-muted)]'} flex items-center justify-center">
+                  <i data-lucide="calendar" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <h3 class="font-display font-bold text-sm text-[var(--color-ink)]">Haftalık Çalışma Planı</h3>
+                  <span class="meta-pill text-[10px] mt-0.5">A4 Dikey</span>
+                </div>
+              </div>
+              ${sablon === 'haftalik-plan' ? '<i data-lucide="check-circle-2" class="w-4 h-4 text-[var(--color-accent)]"></i>' : ''}
+            </div>
+            <p class="text-[11px] text-[var(--color-ink-muted)] mt-2.5 leading-relaxed">Haftanın 7 gününe saat blokları atayın, hedefleri ve aktif ödevleri günlere dağıtın.</p>
+          </div>
+
+          <!-- Şablon 2: Ödev Takip -->
+          <div onclick="App.setCizelgeSablon('odev-takip')" class="p-4 rounded-[var(--radius-md)] border transition-all cursor-pointer ${sablon === 'odev-takip' ? 'bg-[var(--color-paper-3)] border-[var(--color-accent)] ring-1 ring-[var(--color-accent)] shadow-sm' : 'bg-[var(--color-paper-2)] border-[var(--color-rule)] hover:border-[var(--color-rule-strong)]'}">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-[var(--radius-sm)] ${sablon === 'odev-takip' ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-paper-4)] text-[var(--color-ink-muted)]'} flex items-center justify-center">
+                  <i data-lucide="check-square" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <h3 class="font-display font-bold text-sm text-[var(--color-ink)]">Ödev Takip Çizelgesi</h3>
+                  <span class="meta-pill text-[10px] mt-0.5">A4 Dikey</span>
+                </div>
+              </div>
+              ${sablon === 'odev-takip' ? '<i data-lucide="check-circle-2" class="w-4 h-4 text-[var(--color-accent)]"></i>' : ''}
+            </div>
+            <p class="text-[11px] text-[var(--color-ink-muted)] mt-2.5 leading-relaxed">Haftalık ödevleri, yayın kaynaklarını ve hedef soruları listeler, el ile işaretleme kutucukları sunar.</p>
+          </div>
+
+          <!-- Şablon 3: Konu Takip -->
+          <div onclick="App.setCizelgeSablon('konu-takip')" class="p-4 rounded-[var(--radius-md)] border transition-all cursor-pointer ${sablon === 'konu-takip' ? 'bg-[var(--color-paper-3)] border-[var(--color-accent)] ring-1 ring-[var(--color-accent)] shadow-sm' : 'bg-[var(--color-paper-2)] border-[var(--color-rule)] hover:border-[var(--color-rule-strong)]'}">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-[var(--radius-sm)] ${sablon === 'konu-takip' ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-paper-4)] text-[var(--color-ink-muted)]'} flex items-center justify-center">
+                  <i data-lucide="table" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <h3 class="font-display font-bold text-sm text-[var(--color-ink)]">Konu Takip Tablosu</h3>
+                  <span class="meta-pill text-[10px] mt-0.5">A4 Yatay</span>
+                </div>
+              </div>
+              ${sablon === 'konu-takip' ? '<i data-lucide="check-circle-2" class="w-4 h-4 text-[var(--color-accent)]"></i>' : ''}
+            </div>
+            <p class="text-[11px] text-[var(--color-ink-muted)] mt-2.5 leading-relaxed">Derslerin ünite ve konularını işlendi, tekrar, test durumlarına göre matris formatında listeler.</p>
+          </div>
+        </div>
+
+        <!-- ŞABLON AYARLARI KONTROL BARI -->
+        <div class="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] text-xs">
+          <div class="flex items-center gap-4 flex-wrap">
+            <span class="font-medium text-[var(--color-ink)]">Şablon Ayarları:</span>
+            ${sablon === 'haftalik-plan' ? `
+              <label class="flex items-center gap-2 cursor-pointer text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]">
+                <input type="checkbox" ${this.cizelgeGorevleriYerlestir ? 'checked' : ''} onchange="App.toggleCizelgeGorevleriYerlestir()" class="rounded border-[var(--color-rule)] text-[var(--color-accent)] focus:ring-0">
+                <span>Aktif Görevleri Günlere Dağıt</span>
+              </label>
+            ` : ''}
+
+            ${sablon === 'konu-takip' ? `
+              <div class="flex items-center gap-2">
+                <span class="text-[var(--color-ink-faint)]">Ders Seçimi:</span>
+                <select id="cizelge-ders-select" onchange="App.onCizelgeDersChange(this.value)" class="select-instrument text-xs py-1 px-2.5">
+                  ${dersler.map(d => `
+                    <option value="${d.id}" ${String(d.id) === String(this.cizelgeDersId) ? 'selected' : ''}>${d.ad}</option>
+                  `).join('')}
+                </select>
+              </div>
+
+              <label class="flex items-center gap-2 cursor-pointer text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] ml-2">
+                <input type="checkbox" ${this.cizelgeKonuBosMod ? 'checked' : ''} onchange="App.toggleCizelgeKonuBosMod()" class="rounded border-[var(--color-rule)] text-[var(--color-accent)] focus:ring-0">
+                <span>Boş Şablon Olarak Hazırla</span>
+              </label>
+            ` : ''}
+
+            ${sablon === 'odev-takip' ? `
+              <span class="text-[var(--color-ink-muted)]">Öğrencinin aktif ve gecikmiş tüm görevleri teslim tarihlerine göre otomatik aktarılır.</span>
+            ` : ''}
+          </div>
+
+          <div class="text-[11px] text-[var(--color-ink-faint)] font-mono">
+            ${sablon === 'konu-takip' ? 'Yatay Sayfa Düzeni (A4 Landscape)' : 'Dikey Sayfa Düzeni (A4 Portrait)'}
+          </div>
+        </div>
+
+        <!-- BÖLÜM 3: ÖNİZLEME ALANI -->
+        <div class="overflow-x-auto pb-8 pt-2">
+          <div id="cizelge-preview-area">
+            <!-- JS ile doldurulur -->
+          </div>
+        </div>
+      </div>
+    `;
+
+    container.innerHTML = html;
+    this.renderCizelgePreview();
+    if (window.lucide) lucide.createIcons();
+  },
+
+  renderCizelgePreview() {
+    const previewContainer = document.getElementById('cizelge-preview-area');
+    if (!previewContainer) return;
+
+    const selectEl = document.getElementById('cizelge-ogrenci-select');
+    const ogrenciId = (selectEl ? selectEl.value : '') || this.cizelgeOgrenciId || Store.data.aktifOgrenciId;
+    const ogr = Store.getOgrenci(ogrenciId);
+
+    if (!ogr) {
+      previewContainer.className = 'w-full max-w-[820px] mx-auto bg-white text-slate-900 border border-[var(--color-rule)] shadow-xl rounded-xl p-12 text-center';
+      previewContainer.innerHTML = `
+        <div class="py-12 text-center text-slate-500">
+          <i data-lucide="users" class="w-10 h-10 mx-auto mb-3 opacity-40"></i>
+          <h4 class="font-display font-semibold text-sm text-slate-800">Çizelge Önizlemesi İçin Öğrenci Seçin</h4>
+          <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Yukarıdaki öğrenci listesinden bir öğrenci seçerek veya yeni öğrenci ekleyerek A4 çıktı şablonunu oluşturabilirsiniz.</p>
+        </div>
+      `;
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+
+    const isLandscape = this.cizelgeAktifSablon === 'konu-takip';
+    previewContainer.className = isLandscape
+      ? 'w-full max-w-[1080px] mx-auto bg-white text-slate-900 border border-[var(--color-rule)] shadow-xl rounded-xl p-6 md:p-8 min-h-[640px] transition-all'
+      : 'w-full max-w-[820px] mx-auto bg-white text-slate-900 border border-[var(--color-rule)] shadow-xl rounded-xl p-6 md:p-8 min-h-[960px] transition-all';
+
+    let html = '';
+    switch (this.cizelgeAktifSablon) {
+      case 'haftalik-plan':
+        html = this.renderCizelgeHaftalikPlanHTML(ogr);
+        break;
+      case 'odev-takip':
+        html = this.renderCizelgeOdevTakipHTML(ogr);
+        break;
+      case 'konu-takip':
+        html = this.renderCizelgeKonuTakipHTML(ogr);
+        break;
+      default:
+        html = this.renderCizelgeHaftalikPlanHTML(ogr);
+        break;
+    }
+
+    previewContainer.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
+  },
+
+  renderCizelgeHaftalikPlanHTML(ogr) {
+    const koc = Store.getKocProfili();
+    const haftaAraligi = this.getThisWeekDateRangeStr();
+    const modul = ogr ? (typeof MODULLER !== 'undefined' ? MODULLER.find(m => m.id === ogr.modulId) : null) : null;
+    const gunler = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+    const saatler = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
+
+    // Görevleri günlere dağıtma
+    const gunlukGorevler = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+    if (ogr && this.cizelgeGorevleriYerlestir) {
+      const aktifGorevler = Store.getGorevler(ogr.id).filter(g => g.durum !== 'tamamlandi');
+      aktifGorevler.forEach(g => {
+        if (g.deadline) {
+          const d = new Date(g.deadline);
+          if (!isNaN(d.getTime())) {
+            let dayIdx = d.getDay() - 1; // Pazartesi=0 ... Pazar=6
+            if (dayIdx === -1) dayIdx = 6; // Pazar
+            if (gunlukGorevler[dayIdx]) {
+              const ders = Store.getDers(g.dersId);
+              gunlukGorevler[dayIdx].push({
+                dersAd: ders ? (ders.kisaltma || ders.ad) : 'Ödev',
+                baslik: g.baslik,
+                hedef: g.hedefSoru ? `${g.hedefSoru} Soru` : ''
+              });
+            }
+          }
+        }
+      });
+    }
+
+    return `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; background: #ffffff; padding: 12px; box-sizing: border-box;">
+        <!-- Üst Başlık Bandı -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px;">
+          <div style="text-align: left;">
+            <div style="font-size: 14px; font-weight: 700; color: #0f172a; text-transform: uppercase;">${koc.ad} ${koc.soyad}</div>
+            <div style="font-size: 11px; color: #475569; margin-top: 2px;">${koc.unvan || 'Eğitim Koçu'} • ${koc.kurum || 'Plantrack Koçluk'}</div>
+          </div>
+
+          <div style="text-align: center;">
+            <h1 style="font-size: 18px; font-weight: 800; letter-spacing: 2px; margin: 0; color: #0f172a; text-transform: uppercase;">HAFTALIK ÇALIŞMA PLANI</h1>
+            <div style="font-size: 11px; color: #475569; margin-top: 4px; font-family: monospace;">${haftaAraligi}</div>
+          </div>
+
+          <div style="text-align: right;">
+            <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 600;">Öğrenci</div>
+            <div style="font-size: 14px; font-weight: 700; color: #0f172a;">${ogr ? ogr.adSoyad : '—'}</div>
+            <div style="font-size: 11px; color: #475569;">${ogr && ogr.sinif ? `${ogr.sinif}. Sınıf` : ''} ${modul ? `• ${modul.ad}` : ''}</div>
+          </div>
+        </div>
+
+        <!-- 7 Günlük Çizelge Tablosu -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 11px;">
+          <thead>
+            <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+              <th style="width: 50px; padding: 6px 4px; border: 1px solid #cbd5e1; text-align: center; font-size: 10px; color: #475569;">Saat</th>
+              ${gunler.map((g, idx) => `
+                <th style="padding: 6px 4px; border: 1px solid #cbd5e1; text-align: center; font-weight: 700; color: #0f172a;">
+                  ${g}
+                  ${gunlukGorevler[idx].length > 0 ? `<div style="font-size: 9px; font-weight: normal; color: #2563eb;">${gunlukGorevler[idx].length} Ödev</div>` : ''}
+                </th>
+              `).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${saatler.map((s, sIdx) => `
+              <tr style="height: 30px;">
+                <td style="padding: 4px; border: 1px solid #e2e8f0; text-align: center; font-family: monospace; font-size: 10px; background: #f8fafc; color: #475569; font-weight: 600;">
+                  ${s}
+                </td>
+                ${gunler.map((g, gIdx) => {
+                  const dayTasks = gunlukGorevler[gIdx];
+                  const taskForSlot = (sIdx >= 8 && dayTasks.length > (sIdx - 8)) ? dayTasks[sIdx - 8] : null;
+                  return `
+                    <td style="padding: 3px 6px; border: 1px solid #e2e8f0; vertical-align: middle; background: ${taskForSlot ? '#eff6ff' : '#ffffff'};">
+                      ${taskForSlot ? `
+                        <div style="font-size: 10px; font-weight: 600; color: #1d4ed8; line-height: 1.2;">
+                          [${taskForSlot.dersAd}] ${taskForSlot.baslik.substring(0, 18)}
+                        </div>
+                        ${taskForSlot.hedef ? `<div style="font-size: 9px; color: #3b82f6;">${taskForSlot.hedef}</div>` : ''}
+                      ` : `
+                        <div style="border-bottom: 1px dotted #e2e8f0; height: 16px;"></div>
+                      `}
+                    </td>
+                  `;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <!-- Alt Kısım: Hedefler ve Koç Notu -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; border-top: 1px solid #cbd5e1; padding-top: 14px;">
+          <!-- Sol: Hedef Metrikleri -->
+          <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; background: #f8fafc;">
+            <div style="font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; margin-bottom: 8px;">Haftalık Soru & Çalışma Hedefleri</div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px;">
+              <span style="color: #64748b;">Hedef Soru:</span>
+              <strong style="color: #0f172a;">${ogr && ogr.hedefSoru ? `${ogr.hedefSoru} Soru` : 'Belirlenmedi'}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px;">
+              <span style="color: #64748b;">Çözülen Soru:</span>
+              <span style="font-family: monospace; font-weight: bold; color: #0f172a;">[ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ] Soru</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: #64748b;">Tamamlanan Deneme:</span>
+              <span style="font-family: monospace; font-weight: bold; color: #0f172a;">[ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ] Adet</span>
+            </div>
+          </div>
+
+          <!-- Sağ: Koçun Notu & Değerlendirme -->
+          <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; background: #ffffff;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase;">Koçun Notu & Haftalık Değerlendirmesi</span>
+              <span style="font-size: 10px; color: #94a3b8;">İmza / Paraf: [ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ]</span>
+            </div>
+            <div style="border-bottom: 1px dashed #cbd5e1; height: 18px;"></div>
+            <div style="border-bottom: 1px dashed #cbd5e1; height: 18px;"></div>
+            <div style="border-bottom: 1px dashed #cbd5e1; height: 18px;"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  renderCizelgeOdevTakipHTML(ogr) {
+    const koc = Store.getKocProfili();
+    const haftaAraligi = this.getThisWeekDateRangeStr();
+    const modul = ogr ? (typeof MODULLER !== 'undefined' ? MODULLER.find(m => m.id === ogr.modulId) : null) : null;
+
+    let gorevler = [];
+    if (ogr) {
+      const allTasks = Store.getGorevler(ogr.id);
+      gorevler = allTasks.filter(g => g.durum !== 'tamamlandi' || g.durum === 'gecikti');
+    }
+
+    const padCount = Math.max(0, 12 - gorevler.length);
+
+    return `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; background: #ffffff; padding: 12px; box-sizing: border-box;">
+        <!-- Üst Başlık Bandı -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px;">
+          <div style="text-align: left;">
+            <div style="font-size: 14px; font-weight: 700; color: #0f172a; text-transform: uppercase;">${koc.ad} ${koc.soyad}</div>
+            <div style="font-size: 11px; color: #475569; margin-top: 2px;">${koc.unvan || 'Eğitim Koçu'} • ${koc.kurum || 'Plantrack Koçluk'}</div>
+          </div>
+
+          <div style="text-align: center;">
+            <h1 style="font-size: 18px; font-weight: 800; letter-spacing: 2px; margin: 0; color: #0f172a; text-transform: uppercase;">ÖDEV TAKİP ÇİZELGESİ</h1>
+            <div style="font-size: 11px; color: #475569; margin-top: 4px; font-family: monospace;">${haftaAraligi}</div>
+          </div>
+
+          <div style="text-align: right;">
+            <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 600;">Öğrenci</div>
+            <div style="font-size: 14px; font-weight: 700; color: #0f172a;">${ogr ? ogr.adSoyad : '—'}</div>
+            <div style="font-size: 11px; color: #475569;">${ogr && ogr.sinif ? `${ogr.sinif}. Sınıf` : ''} ${modul ? `• ${modul.ad}` : ''}</div>
+          </div>
+        </div>
+
+        <!-- Ödev Tablosu -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 11px;">
+          <thead>
+            <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+              <th style="width: 32px; padding: 7px 4px; border: 1px solid #cbd5e1; text-align: center;">#</th>
+              <th style="width: 110px; padding: 7px 8px; border: 1px solid #cbd5e1; text-align: left;">Ders</th>
+              <th style="padding: 7px 8px; border: 1px solid #cbd5e1; text-align: left;">Konu / Görev Tanımı</th>
+              <th style="width: 130px; padding: 7px 8px; border: 1px solid #cbd5e1; text-align: left;">Kaynak / Yayın</th>
+              <th style="width: 75px; padding: 7px 6px; border: 1px solid #cbd5e1; text-align: center;">Hedef Soru</th>
+              <th style="width: 80px; padding: 7px 6px; border: 1px solid #cbd5e1; text-align: center;">Teslim</th>
+              <th style="width: 85px; padding: 7px 6px; border: 1px solid #cbd5e1; text-align: center;">Tamamlandı</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${gorevler.map((g, idx) => {
+              const ders = Store.getDers(g.dersId);
+              const kaynak = g.kaynakId ? Store.getKaynak(g.kaynakId) : null;
+              const teslimStr = g.deadline ? new Date(g.deadline).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '—';
+              return `
+                <tr style="height: 32px;">
+                  <td style="padding: 5px 4px; border: 1px solid #e2e8f0; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
+                  <td style="padding: 5px 8px; border: 1px solid #e2e8f0; font-weight: 600; color: #0f172a;">${ders ? ders.ad : '—'}</td>
+                  <td style="padding: 5px 8px; border: 1px solid #e2e8f0; color: #334155;">${g.baslik}</td>
+                  <td style="padding: 5px 8px; border: 1px solid #e2e8f0; color: #475569;">${kaynak ? `${kaynak.yayinevi} - ${kaynak.ad}` : '—'}</td>
+                  <td style="padding: 5px 6px; border: 1px solid #e2e8f0; text-align: center; font-weight: 600; color: #0f172a;">${g.hedefSoru ? `${g.hedefSoru}` : '—'}</td>
+                  <td style="padding: 5px 6px; border: 1px solid #e2e8f0; text-align: center; font-family: monospace; color: ${g.durum === 'gecikti' ? '#dc2626' : '#475569'};">${teslimStr}</td>
+                  <td style="padding: 5px 6px; border: 1px solid #e2e8f0; text-align: center;">
+                    <span style="display: inline-block; width: 16px; height: 16px; border: 2px solid #94a3b8; border-radius: 3px; vertical-align: middle;"></span>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+
+            ${Array.from({ length: padCount }).map((_, i) => `
+              <tr style="height: 32px;">
+                <td style="padding: 5px 4px; border: 1px solid #e2e8f0; text-align: center; font-family: monospace; color: #cbd5e1;">${gorevler.length + i + 1}</td>
+                <td style="padding: 5px 8px; border: 1px solid #e2e8f0;"></td>
+                <td style="padding: 5px 8px; border: 1px solid #e2e8f0;"></td>
+                <td style="padding: 5px 8px; border: 1px solid #e2e8f0;"></td>
+                <td style="padding: 5px 6px; border: 1px solid #e2e8f0;"></td>
+                <td style="padding: 5px 6px; border: 1px solid #e2e8f0;"></td>
+                <td style="padding: 5px 6px; border: 1px solid #e2e8f0; text-align: center;">
+                  <span style="display: inline-block; width: 16px; height: 16px; border: 2px solid #cbd5e1; border-radius: 3px; vertical-align: middle;"></span>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <!-- Alt Kısım: Notlar ve İmza Bandı -->
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; border-top: 1px solid #cbd5e1; padding-top: 14px;">
+          <!-- Koçun Notu -->
+          <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; background: #ffffff;">
+            <div style="font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; margin-bottom: 6px;">Koç Değerlendirmesi & Haftalık Talimatlar</div>
+            <div style="border-bottom: 1px dashed #cbd5e1; height: 18px;"></div>
+            <div style="border-bottom: 1px dashed #cbd5e1; height: 18px;"></div>
+            <div style="border-bottom: 1px dashed #cbd5e1; height: 18px;"></div>
+          </div>
+
+          <!-- İmza Bandı -->
+          <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; background: #f8fafc; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 600;">Öğrenci Parafı</div>
+              <div style="border-bottom: 1px solid #94a3b8; height: 22px; margin-bottom: 10px;"></div>
+            </div>
+            <div>
+              <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 600;">Koç Onayı & Kaşe</div>
+              <div style="font-size: 11px; font-weight: bold; color: #0f172a;">${koc.ad} ${koc.soyad}</div>
+              <div style="border-bottom: 1px solid #94a3b8; height: 16px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  renderCizelgeKonuTakipHTML(ogr) {
+    const koc = Store.getKocProfili();
+    const bugunTarih = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+    const dersler = ogr ? Store.getDerslerForOgrenci(ogr) : [];
+    const seciliDersId = this.cizelgeDersId || (dersler[0] ? dersler[0].id : '');
+    const ders = Store.getDers(seciliDersId);
+    const konular = seciliDersId ? Store.getKonularForDers(seciliDersId) : [];
+
+    let tamamlananSayisi = 0;
+    const durumHaritasi = {};
+    if (ogr && !this.cizelgeKonuBosMod) {
+      konular.forEach(k => {
+        const d = Store.getKonuDurumu(ogr.id, k.id);
+        durumHaritasi[k.id] = d;
+        if (d === 'tamam') tamamlananSayisi++;
+      });
+    }
+
+    const toplamKonu = konular.length;
+    const yuzde = toplamKonu > 0 ? Math.round((tamamlananSayisi / toplamKonu) * 100) : 0;
+
+    return `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; background: #ffffff; padding: 12px; box-sizing: border-box;">
+        <!-- Üst Başlık Bandı -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 16px;">
+          <div style="text-align: left;">
+            <h1 style="font-size: 18px; font-weight: 800; letter-spacing: 2px; margin: 0; color: #0f172a; text-transform: uppercase;">KONU TAKİP TABLOSU</h1>
+            <div style="font-size: 11px; color: #475569; margin-top: 3px;">${koc.ad} ${koc.soyad} • ${koc.kurum || 'Plantrack Koçluk'}</div>
+          </div>
+
+          <div style="text-align: center;">
+            <div style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 600;">Seçili Ders</div>
+            <div style="font-size: 16px; font-weight: 800; color: #0f172a;">${ders ? ders.ad : 'Ders Seçilmedi'}</div>
+            <div style="font-size: 10px; color: #475569; font-family: monospace; margin-top: 2px;">
+              ${this.cizelgeKonuBosMod ? 'Boş Takip Şablonu' : `İlerleme: ${tamamlananSayisi} / ${toplamKonu} Konu Tamamlandı (%${yuzde})`}
+            </div>
+          </div>
+
+          <div style="text-align: right;">
+            <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 600;">Öğrenci & Tarih</div>
+            <div style="font-size: 14px; font-weight: 700; color: #0f172a;">${ogr ? ogr.adSoyad : '—'}</div>
+            <div style="font-size: 11px; color: #475569;">${ogr && ogr.sinif ? `${ogr.sinif}. Sınıf` : ''} • ${bugunTarih}</div>
+          </div>
+        </div>
+
+        <!-- Konu Tablosu -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 11px;">
+          <thead>
+            <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+              <th style="width: 160px; padding: 7px 8px; border: 1px solid #cbd5e1; text-align: left;">Ünite</th>
+              <th style="padding: 7px 8px; border: 1px solid #cbd5e1; text-align: left;">Konu Adı</th>
+              <th style="width: 80px; padding: 7px 6px; border: 1px solid #cbd5e1; text-align: center;">İşlendi</th>
+              <th style="width: 80px; padding: 7px 6px; border: 1px solid #cbd5e1; text-align: center;">Tekrar</th>
+              <th style="width: 80px; padding: 7px 6px; border: 1px solid #cbd5e1; text-align: center;">Test</th>
+              <th style="width: 160px; padding: 7px 8px; border: 1px solid #cbd5e1; text-align: left;">Koç Notu / Hedef</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${konular.length === 0 ? `
+              <tr>
+                <td colspan="6" style="padding: 24px; text-align: center; color: #94a3b8;">Bu derse ait konu tanımlanmamıştır.</td>
+              </tr>
+            ` : konular.map(k => {
+              const dur = durumHaritasi[k.id];
+              const isIslendi = dur === 'tamam';
+              const isTekrar = dur === 'tekrar_lazim';
+              const isTest = dur === 'calisiliyor';
+
+              return `
+                <tr style="height: 30px;">
+                  <td style="padding: 5px 8px; border: 1px solid #e2e8f0; font-weight: 600; color: #475569; font-size: 10px;">${k.unite || 'Genel'}</td>
+                  <td style="padding: 5px 8px; border: 1px solid #e2e8f0; font-weight: 500; color: #0f172a;">${k.konuAdi}</td>
+                  <td style="padding: 5px 6px; border: 1px solid #e2e8f0; text-align: center;">
+                    ${isIslendi ? `<span style="font-weight: bold; color: #16a34a; font-size: 13px;">☑</span>` : `<span style="display: inline-block; width: 15px; height: 15px; border: 2px solid #cbd5e1; border-radius: 3px; vertical-align: middle;"></span>`}
+                  </td>
+                  <td style="padding: 5px 6px; border: 1px solid #e2e8f0; text-align: center;">
+                    ${isTekrar ? `<span style="font-weight: bold; color: #ea580c; font-size: 13px;">☑</span>` : `<span style="display: inline-block; width: 15px; height: 15px; border: 2px solid #cbd5e1; border-radius: 3px; vertical-align: middle;"></span>`}
+                  </td>
+                  <td style="padding: 5px 6px; border: 1px solid #e2e8f0; text-align: center;">
+                    ${isTest ? `<span style="font-weight: bold; color: #2563eb; font-size: 13px;">☑</span>` : `<span style="display: inline-block; width: 15px; height: 15px; border: 2px solid #cbd5e1; border-radius: 3px; vertical-align: middle;"></span>`}
+                  </td>
+                  <td style="padding: 5px 8px; border: 1px solid #e2e8f0; color: #64748b; font-size: 10px;">
+                    <div style="border-bottom: 1px dotted #cbd5e1; height: 16px;"></div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+
+        <!-- Alt Kısım -->
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #cbd5e1; padding-top: 12px; font-size: 11px;">
+          <div style="color: #475569;">
+            Toplam <strong>${toplamKonu}</strong> konu listelenmektedir. ${!this.cizelgeKonuBosMod ? `(Tamamlanan: ${tamamlananSayisi}, Başarı Oranı: %${yuzde})` : ''}
+          </div>
+          <div style="display: flex; align-items: center; gap: 24px;">
+            <span style="color: #64748b;">Öğrenci Parafı: [ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ]</span>
+            <span style="color: #64748b;">Koç Onayı: [ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ]</span>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // VIEW: SINAV NOTLARI (renderSinavNotlari)
+  // ─────────────────────────────────────────────────────────────
+  getSinavNotu(notId) {
+    if (!notId) return null;
+    const notlar = Store.data.sinifNotlari || [];
+    return notlar.find(n => String(n.id) === String(notId)) || null;
+  },
+
+  deleteSinavNotu(notId) {
+    const not = this.getSinavNotu(notId);
+    if (!not) return;
+    this.openConfirmModal(
+      'Sınav Notunu Sil',
+      `"${not.sinavAdi}" (${not.not}) sınav notu kalıcı olarak silinecektir. Onaylıyor musunuz?`,
+      () => {
+        Store.deleteSinifNotu(notId);
+        this.showToast('Sınav notu başarıyla silindi.');
+        this.renderSinavNotlari();
+      }
+    );
+  },
+
+  getSinavNotuRenkClass(score) {
+    if (score === null || score === undefined) {
+      return {
+        badge: 'text-slate-500 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700',
+        text: 'text-slate-500'
+      };
+    }
+    const n = Number(score);
+    if (n >= 85) {
+      return {
+        badge: 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900',
+        text: 'text-emerald-600 dark:text-emerald-400'
+      };
+    }
+    if (n >= 70) {
+      return {
+        badge: 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900',
+        text: 'text-blue-600 dark:text-blue-400'
+      };
+    }
+    if (n >= 50) {
+      return {
+        badge: 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900',
+        text: 'text-amber-600 dark:text-amber-400'
+      };
+    }
+    return {
+      badge: 'text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900',
+      text: 'text-rose-600 dark:text-rose-400'
+    };
+  },
+
+  renderSinavNotuTrendSVG(ogr, targetDersId) {
+    const ders = Store.getDers(targetDersId);
+    const notlar = Store.getSinifNotlari(ogr.id, targetDersId);
+
+    // Kural: Veri 3'ten azsa grafik gösterilmez, "En az 3 sınav notu gerekli" mesajı.
+    if (notlar.length < 3) {
+      return `
+        <div class="py-10 px-4 text-center rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)]">
+          <div class="w-10 h-10 rounded-full bg-[var(--color-paper-3)] border border-[var(--color-rule-strong)] text-[var(--color-ink-faint)] flex items-center justify-center mx-auto mb-3">
+            <i data-lucide="trending-up" class="w-5 h-5"></i>
+          </div>
+          <h4 class="font-display font-semibold text-xs text-[var(--color-ink)]">Gelişim Trend Grafiği İçin Yetersiz Veri</h4>
+          <p class="text-[11px] text-[var(--color-ink-muted)] mt-1 max-w-sm mx-auto">
+            ${ders ? `"${ders.ad}" dersine` : 'Seçili derse'} ait gelişim trendini görüntülemek için en az 3 sınav notu girilmiş olması gerekir. (Şu an: ${notlar.length} not)
+          </p>
+          <button onclick="App.openSinavNotuModal()" class="btn-tactile btn-tactile-ghost text-xs py-1 px-3 mt-3 inline-flex items-center gap-1.5 text-[var(--color-accent)]">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <span>Bu Derse Sınav Notu Ekle</span>
+          </button>
+        </div>
+      `;
+    }
+
+    // Kronolojik sıralama: En eski -> En yeni (soldan sağa çizgi)
+    const chartData = notlar.slice(0, 10).reverse();
+    const count = chartData.length;
+
+    const padL = 45;
+    const padR = 40;
+    const padT = 30;
+    const padB = 45;
+    const totalW = 760;
+    const totalH = 220;
+    const plotW = totalW - padL - padR;
+    const plotH = totalH - padT - padB;
+
+    const getX = (i) => Math.round(padL + (i / (count - 1)) * plotW);
+    const getY = (score) => Math.round(padT + (1 - Math.max(0, Math.min(100, score)) / 100) * plotH);
+
+    // Kılavuz çizgileri: 0, 25, 50, 75, 100
+    const yLevels = [0, 25, 50, 75, 100];
+    const gridLines = yLevels.map(lvl => {
+      const y = getY(lvl);
+      return `
+        <line x1="${padL}" y1="${y}" x2="${totalW - padR}" y2="${y}" stroke="currentColor" stroke-opacity="0.08" stroke-dasharray="3 3" />
+        <text x="${padL - 10}" y="${y + 4}" text-anchor="end" font-size="10" fill="currentColor" opacity="0.45" font-family="monospace">${lvl}</text>
+      `;
+    }).join('');
+
+    const pointsStr = chartData.map((d, i) => `${getX(i)},${getY(d.not)}`).join(' ');
+    const polygonStr = `${getX(0)},${padT + plotH} ${pointsStr} ${getX(count - 1)},${padT + plotH}`;
+
+    const dotsAndLabels = chartData.map((d, i) => {
+      const x = getX(i);
+      const y = getY(d.not);
+      const kisaTarih = d.tarih ? new Date(d.tarih).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' }) : '';
+      return `
+        <g class="cursor-pointer group">
+          <title>${d.sinavAdi}: ${d.not} (${d.tarih || ''})</title>
+          <!-- Halo -->
+          <circle cx="${x}" cy="${y}" r="7" fill="var(--color-accent)" fill-opacity="0.2" />
+          <!-- Nokta -->
+          <circle cx="${x}" cy="${y}" r="4" fill="var(--color-accent)" stroke="#ffffff" stroke-width="2" />
+          <!-- Not Değeri -->
+          <text x="${x}" y="${y - 10}" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor">${d.not}</text>
+          <!-- Sınav Adı -->
+          <text x="${x}" y="${padT + plotH + 18}" text-anchor="middle" font-size="10" font-weight="500" fill="currentColor" opacity="0.85">${d.sinavAdi.substring(0, 12)}</text>
+          <!-- Tarih -->
+          <text x="${x}" y="${padT + plotH + 30}" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.5" font-family="monospace">${kisaTarih}</text>
+        </g>
+      `;
+    }).join('');
+
+    return `
+      <div class="p-4 rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] shadow-xs">
+        <div class="flex items-center justify-between mb-3 px-2">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-[var(--color-accent)]"></span>
+            <h4 class="font-display font-semibold text-xs text-[var(--color-ink)]">${ders ? ders.ad : ''} Sınav Notu Gelişim Trendi (Son ${count} Sınav)</h4>
+          </div>
+          <span class="text-[10px] text-[var(--color-ink-faint)] font-mono">0 – 100 Başarı Skalası</span>
+        </div>
+
+        <div class="w-full overflow-x-auto">
+          <svg viewBox="0 0 ${totalW} ${totalH}" class="w-full h-48 min-w-[550px] text-[var(--color-ink)] select-none">
+            <defs>
+              <linearGradient id="sinavTrendGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.3" />
+                <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0.02" />
+              </linearGradient>
+            </defs>
+
+            <!-- Kılavuz Çizgileri -->
+            ${gridLines}
+
+            <!-- Alan Dolgusu -->
+            <polygon points="${polygonStr}" fill="url(#sinavTrendGrad)" />
+
+            <!-- Çizgi -->
+            <polyline points="${pointsStr}" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+
+            <!-- Veri Noktaları ve Etiketler -->
+            ${dotsAndLabels}
+          </svg>
+        </div>
+      </div>
+    `;
+  },
+
+  renderSinavNotlari() {
+    const container = document.getElementById('view-sinav-notlari');
+    if (!container) return;
+
+    const ogr = Store.getAktifOgrenci();
+    if (!ogr) {
+      container.innerHTML = `
+        <div class="p-12 text-center max-w-md mx-auto space-y-4">
+          <div class="w-12 h-12 rounded-full bg-[var(--color-paper-3)] border border-[var(--color-rule-strong)] text-[var(--color-ink-faint)] flex items-center justify-center mx-auto">
+            <i data-lucide="user-x" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Aktif Öğrenci Seçilmedi</h3>
+            <p class="text-xs text-[var(--color-ink-muted)] mt-1">Sınav notlarını görüntülemek ve yeni not girişi yapmak için lütfen önce aktif bir öğrenci belirleyin.</p>
+          </div>
+          <button onclick="App.navigateTo('students')" class="btn-tactile btn-tactile-primary text-xs py-2 px-4 inline-flex items-center gap-2">
+            <i data-lucide="users" class="w-4 h-4"></i>
+            <span>Öğrenci Portföyüne Git</span>
+          </button>
+        </div>
+      `;
+      if (window.lucide) lucide.createIcons();
+      return;
+    }
+
+    const dersler = Store.getDerslerForOgrenci(ogr);
+    const modul = typeof MODULLER !== 'undefined' ? MODULLER.find(m => m.id === ogr.modulId) : null;
+
+    // Aktif ders seçimi (trend grafiği için)
+    if (!this.sinavNotlariAktifDersId && dersler.length > 0) {
+      this.sinavNotlariAktifDersId = this.sinavNotlariDersFilter || dersler[0].id;
+    }
+
+    // Filtreli Notlar
+    let notlar = Store.getSinifNotlari(ogr.id, this.sinavNotlariDersFilter);
+    if (this.sinavNotlariTurFilter && this.sinavNotlariTurFilter !== 'tum') {
+      notlar = notlar.filter(n => n.tur === this.sinavNotlariTurFilter);
+    }
+
+    const turEtiketleri = {
+      'yazili': 'Yazılı',
+      'sozlu': 'Sözlü',
+      'proje': 'Proje',
+      'kisa-sinav': 'Kısa Sınav'
+    };
+
+    const html = `
+      <div class="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
+        <!-- BÖLÜM 1: ARAÇ ÇUBUĞU -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[var(--color-rule)]">
+          <div>
+            <div class="flex items-center gap-3">
+              <h1 class="text-xl font-bold font-display text-[var(--color-ink)]">Sınav Notları</h1>
+              <span class="meta-pill font-mono">${ogr.adSoyad} (${ogr.sinif ? `${ogr.sinif}. Sınıf` : ''} ${modul ? `• ${modul.ad}` : ''})</span>
+            </div>
+            <p class="text-xs text-[var(--color-ink-muted)] mt-1">Öğrencinin yazılı, sözlü ve proje sınav notlarını takip edin, ders ortalamalarını ve başarı trendini analiz edin.</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2.5">
+            <!-- Ders Filtresi -->
+            <select id="notlar-ders-filter" onchange="App.sinavNotlariDersFilter = this.value; if (this.value && this.value !== 'tum') App.sinavNotlariAktifDersId = this.value; App.renderSinavNotlari();" class="select-instrument text-xs py-1.5 px-3 min-w-[140px]">
+              <option value="tum" ${!this.sinavNotlariDersFilter || this.sinavNotlariDersFilter === 'tum' ? 'selected' : ''}>Tüm Dersler</option>
+              ${dersler.map(d => `
+                <option value="${d.id}" ${this.sinavNotlariDersFilter === d.id ? 'selected' : ''}>${d.ad}</option>
+              `).join('')}
+            </select>
+
+            <!-- Tür Filtresi -->
+            <select id="notlar-tur-filter" onchange="App.sinavNotlariTurFilter = this.value; App.renderSinavNotlari();" class="select-instrument text-xs py-1.5 px-3 min-w-[130px]">
+              <option value="tum" ${!this.sinavNotlariTurFilter || this.sinavNotlariTurFilter === 'tum' ? 'selected' : ''}>Tüm Türler</option>
+              <option value="yazili" ${this.sinavNotlariTurFilter === 'yazili' ? 'selected' : ''}>Yazılı Sınav</option>
+              <option value="sozlu" ${this.sinavNotlariTurFilter === 'sozlu' ? 'selected' : ''}>Sözlü Notu</option>
+              <option value="proje" ${this.sinavNotlariTurFilter === 'proje' ? 'selected' : ''}>Proje & Ödev</option>
+              <option value="kisa-sinav" ${this.sinavNotlariTurFilter === 'kisa-sinav' ? 'selected' : ''}>Kısa Sınav (Quiz)</option>
+            </select>
+
+            <!-- + Not Ekle Butonu -->
+            <button onclick="App.openSinavNotuModal()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-3.5 inline-flex items-center gap-1.5 shadow-sm">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>+ Not Ekle</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- BÖLÜM 2: DERS BAZLI ÖZET KARTLARI -->
+        <div>
+          <div class="flex items-center justify-between mb-2.5">
+            <h3 class="font-display font-bold text-xs uppercase tracking-wider text-[var(--color-ink-muted)]">Ders Bazlı Not Ortalamaları & Trend</h3>
+            <span class="text-[11px] text-[var(--color-ink-faint)]">Karta tıklayarak trend grafiğini görüntüleyin</span>
+          </div>
+
+          <div class="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+            ${dersler.length === 0 ? `
+              <div class="p-4 rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] text-xs text-[var(--color-ink-muted)]">
+                Öğrenci kademesine ait ders tanımlanmamıştır.
+              </div>
+            ` : dersler.map(d => {
+              const avg = Store.getNotOrtalamasi(ogr.id, d.id);
+              const dersNotlari = Store.getSinifNotlari(ogr.id, d.id);
+              const sonNot = dersNotlari.length > 0 ? dersNotlari[0] : null;
+
+              // Trend Oku Hesaplama (Son 3 not)
+              let trendIcon = 'minus';
+              let trendColor = 'text-[var(--color-ink-faint)]';
+              let trendText = 'Tek Not';
+
+              if (dersNotlari.length >= 2) {
+                const n0 = Number(dersNotlari[0].not);
+                const nPrev = dersNotlari.length >= 3 ? Number(dersNotlari[2].not) : Number(dersNotlari[1].not);
+                if (n0 > nPrev) {
+                  trendIcon = 'trending-up';
+                  trendColor = 'text-emerald-500';
+                  trendText = 'Yükselişte';
+                } else if (n0 < nPrev) {
+                  trendIcon = 'trending-down';
+                  trendColor = 'text-rose-500';
+                  trendText = 'Düşüşte';
+                } else {
+                  trendIcon = 'minus';
+                  trendColor = 'text-slate-400';
+                  trendText = 'Dengeli';
+                }
+              } else if (dersNotlari.length === 0) {
+                trendText = 'Not Yok';
+              }
+
+              const renkInfo = this.getSinavNotuRenkClass(avg);
+              const isSelected = String(d.id) === String(this.sinavNotlariAktifDersId);
+
+              return `
+                <div onclick="App.sinavNotlariAktifDersId = '${d.id}'; App.renderSinavNotlari();" class="flex-shrink-0 w-52 p-3.5 rounded-[var(--radius-md)] border transition-all cursor-pointer ${isSelected ? 'bg-[var(--color-paper-3)] border-[var(--color-accent)] ring-1 ring-[var(--color-accent)] shadow-xs' : 'bg-[var(--color-paper-2)] border-[var(--color-rule)] hover:border-[var(--color-rule-strong)]'}">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-[var(--color-ink)] truncate max-w-[120px]" title="${d.ad}">${d.ad}</span>
+                    <span class="w-2.5 h-2.5 rounded-full" style="background-color: ${d.renk || 'var(--color-accent)'};"></span>
+                  </div>
+
+                  <div class="flex items-baseline justify-between mt-2.5">
+                    <div>
+                      <div class="font-display font-extrabold text-2xl ${renkInfo.text}">
+                        ${avg !== null ? avg : '—'}
+                      </div>
+                      <div class="text-[10px] text-[var(--color-ink-muted)]">Ortalama</div>
+                    </div>
+
+                    <div class="text-right">
+                      <div class="flex items-center justify-end gap-1 text-[11px] font-medium ${trendColor}">
+                        <i data-lucide="${trendIcon}" class="w-3.5 h-3.5"></i>
+                        <span>${trendText}</span>
+                      </div>
+                      <div class="text-[10px] text-[var(--color-ink-faint)] mt-0.5">
+                        ${sonNot ? `Son: ${sonNot.not} (${new Date(sonNot.tarih).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })})` : 'Kayıt Yok'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <!-- BÖLÜM 3: TREND GRAFİĞİ -->
+        <div>
+          ${this.renderSinavNotuTrendSVG(ogr, this.sinavNotlariAktifDersId)}
+        </div>
+
+        <!-- BÖLÜM 4: NOT LİSTESİ -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-display font-bold text-xs uppercase tracking-wider text-[var(--color-ink-muted)]">
+              Sınav Notları Listesi (${notlar.length})
+            </h3>
+            ${this.sinavNotlariDersFilter && this.sinavNotlariDersFilter !== 'tum' ? `
+              <button onclick="App.sinavNotlariDersFilter = 'tum'; App.renderSinavNotlari();" class="text-[11px] text-[var(--color-accent)] hover:underline">
+                Filtreyi Temizle (Tüm Dersleri Göster)
+              </button>
+            ` : ''}
+          </div>
+
+          ${notlar.length === 0 ? `
+            <div class="py-12 px-4 text-center rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)]">
+              <div class="w-10 h-10 rounded-full bg-[var(--color-paper-3)] border border-[var(--color-rule-strong)] text-[var(--color-ink-faint)] flex items-center justify-center mx-auto mb-3">
+                <i data-lucide="clipboard-list" class="w-5 h-5"></i>
+              </div>
+              <h4 class="font-display font-semibold text-xs text-[var(--color-ink)]">Henüz Sınav Notu Eklenmedi</h4>
+              <p class="text-[11px] text-[var(--color-ink-muted)] mt-1 max-w-sm mx-auto">
+                ${this.sinavNotlariDersFilter && this.sinavNotlariDersFilter !== 'tum' ? 'Seçili ders ve filtreye ait sınav notu kaydı bulunamadı.' : 'Öğrencinin okul yazılıları veya deneme sınav notlarını sisteme işleyerek takibe başlayın.'}
+              </p>
+              <button onclick="App.openSinavNotuModal()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-3.5 mt-3 inline-flex items-center gap-1.5">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>+ İlk Sınav Notunu Ekle</span>
+              </button>
+            </div>
+          ` : `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              ${notlar.map(n => {
+                const ders = Store.getDers(n.dersId);
+                const renkInfo = this.getSinavNotuRenkClass(n.not);
+                const turAdi = turEtiketleri[n.tur] || n.tur;
+                const tarihStr = n.tarih ? new Date(n.tarih).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+
+                return `
+                  <div class="p-3.5 rounded-[var(--radius-md)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] hover:border-[var(--color-rule-strong)] transition-all flex items-center justify-between gap-3 group">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <!-- Büyük Renkli Not Rozeti -->
+                      <div class="w-12 h-12 rounded-[var(--radius-md)] border flex flex-col items-center justify-center flex-shrink-0 ${renkInfo.badge}">
+                        <span class="font-display font-black text-lg leading-none">${n.not}</span>
+                        <span class="text-[9px] uppercase tracking-wider opacity-75 font-semibold mt-0.5">Puan</span>
+                      </div>
+
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                          <span class="meta-pill text-[10px] font-semibold" style="border-color: ${ders ? ders.renk : 'transparent'};">
+                            ${ders ? ders.ad : 'Ders'}
+                          </span>
+                          <span class="text-[10px] text-[var(--color-ink-faint)] font-mono">${turAdi}</span>
+                        </div>
+                        <h4 class="font-display font-bold text-sm text-[var(--color-ink)] truncate mt-1">${n.sinavAdi}</h4>
+                        <div class="text-[11px] text-[var(--color-ink-muted)] font-mono mt-0.5">${tarihStr}</div>
+                      </div>
+                    </div>
+
+                    <!-- Aksiyon İkonları -->
+                    <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                      <button onclick="App.openSinavNotuModal('${n.id}')" class="p-1.5 rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-accent)] hover:bg-[var(--color-paper-3)] transition-colors" title="Düzenle">
+                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                      </button>
+                      <button onclick="App.deleteSinavNotu('${n.id}')" class="p-1.5 rounded-[var(--radius-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors" title="Sil">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                      </button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+
+    container.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
+  },
+
+  openSinavNotuModal(notId = null) {
+    const ogr = Store.getAktifOgrenci();
+    if (!ogr) {
+      this.showToast('Lütfen önce bir öğrenci seçin.');
+      return;
+    }
+
+    const isEdit = Boolean(notId);
+    const mevcutNot = isEdit ? this.getSinavNotu(notId) : null;
+    const dersler = Store.getDerslerForOgrenci(ogr);
+
+    const bugunTarih = new Date().toISOString().split('T')[0];
+    const seciliDersId = mevcutNot ? mevcutNot.dersId : (this.sinavNotlariAktifDersId || (dersler[0] ? dersler[0].id : ''));
+    const seciliTur = mevcutNot ? mevcutNot.tur : 'yazili';
+
+    const presetChips = ['1. Yazılı', '2. Yazılı', 'Sözlü', 'Proje', 'Kısa Sınav', 'Deneme'];
+
+    const html = `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
+          <div>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">${isEdit ? 'Sınav Notunu Düzenle' : 'Yeni Sınav Notu Ekle'}</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Öğrenci: <strong class="text-[var(--color-ink)]">${ogr.adSoyad}</strong> (${ogr.sinif}. Sınıf)</p>
+          </div>
+          <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <form id="form-sinav-notu" class="space-y-3.5 text-xs">
+          <div>
+            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Ders <span class="text-[var(--color-danger)]">*</span></label>
+            <select id="modal-not-ders" class="select-instrument w-full p-2" required>
+              ${dersler.map(d => `
+                <option value="${d.id}" ${String(d.id) === String(seciliDersId) ? 'selected' : ''}>${d.ad}</option>
+              `).join('')}
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Sınav Adı <span class="text-[var(--color-danger)]">*</span></label>
+            <input type="text" id="modal-not-adi" value="${mevcutNot ? mevcutNot.sinavAdi : '1. Yazılı'}" required class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]" placeholder="Örn: 1. Dönem 1. Yazılı">
+            <!-- Hızlı Başlık Önerileri -->
+            <div class="flex items-center gap-1.5 flex-wrap mt-1.5">
+              ${presetChips.map(p => `
+                <button type="button" onclick="document.getElementById('modal-not-adi').value = '${p}'" class="meta-pill hover:border-[var(--color-accent)] cursor-pointer">
+                  ${p}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Sınav Notu (0 – 100) <span class="text-[var(--color-danger)]">*</span></label>
+              <input type="number" id="modal-not-deger" min="0" max="100" value="${mevcutNot ? mevcutNot.not : ''}" required class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)] text-sm font-bold" placeholder="Örn: 85">
+            </div>
+
+            <div>
+              <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Sınav Türü</label>
+              <select id="modal-not-tur" class="select-instrument w-full p-2">
+                <option value="yazili" ${seciliTur === 'yazili' ? 'selected' : ''}>Yazılı Sınav</option>
+                <option value="sozlu" ${seciliTur === 'sozlu' ? 'selected' : ''}>Sözlü Değerlendirme</option>
+                <option value="proje" ${seciliTur === 'proje' ? 'selected' : ''}>Proje & Performans</option>
+                <option value="kisa-sinav" ${seciliTur === 'kisa-sinav' ? 'selected' : ''}>Kısa Sınav (Quiz)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Sınav / Değerlendirme Tarihi</label>
+            <input type="date" id="modal-not-tarih" value="${mevcutNot ? (mevcutNot.tarih || bugunTarih) : bugunTarih}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
+            <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">Vazgeç</button>
+            <button type="submit" class="btn-tactile btn-tactile-primary">${isEdit ? 'Değişiklikleri Kaydet' : 'Notu Kaydet'}</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    this.openModal(html);
+
+    const form = document.getElementById('form-sinav-notu');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        const dersId = document.getElementById('modal-not-ders').value;
+        const sinavAdi = document.getElementById('modal-not-adi').value.trim();
+        const notVal = Number(document.getElementById('modal-not-deger').value);
+        const tur = document.getElementById('modal-not-tur').value;
+        const tarih = document.getElementById('modal-not-tarih').value;
+
+        if (!dersId) {
+          this.showToast('Lütfen ders seçin.');
+          return;
+        }
+        if (!sinavAdi) {
+          this.showToast('Lütfen sınav adı girin.');
+          return;
+        }
+        if (isNaN(notVal) || notVal < 0 || notVal > 100) {
+          this.showToast('Lütfen 0 ile 100 arasında geçerli bir not girin.');
+          return;
+        }
+
+        if (isEdit) {
+          Store.updateSinifNotu(notId, { dersId, sinavAdi, not: notVal, tur, tarih });
+          this.showToast('Sınav notu güncellendi.');
+        } else {
+          Store.addSinifNotu({
+            ogrenciId: ogr.id,
+            dersId,
+            sinavAdi,
+            not: notVal,
+            tur,
+            tarih
+          });
+          this.showToast('Sınav notu eklendi.');
+        }
+
+        this.closeModal();
+        this.sinavNotlariAktifDersId = dersId;
+        this.renderSinavNotlari();
+      });
     }
   },
 

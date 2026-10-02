@@ -639,10 +639,10 @@ const Store = {
     if (ogrenciId) {
       filtered = filtered.filter(n => String(n.ogrenciId) === String(ogrenciId));
     }
-    if (dersId) {
+    if (dersId && dersId !== 'tum') {
       filtered = filtered.filter(n => String(n.dersId) === String(dersId));
     }
-    return filtered;
+    return filtered.slice().sort((a, b) => new Date(b.tarih || 0) - new Date(a.tarih || 0));
   },
 
   addSinifNotu(veri) {
@@ -756,6 +756,11 @@ const Store = {
       this.data.ogrenciKonuDurumlari = this.data.ogrenciKonuDurumlari.filter(
         kd => !silinecekKonuIds.has(String(kd.konuId))
       );
+    }
+
+    // Sınav notlarını temizle
+    if (Array.isArray(this.data.sinifNotlari)) {
+      this.data.sinifNotlari = this.data.sinifNotlari.filter(n => String(n.dersId) !== targetId);
     }
 
     this.save();
