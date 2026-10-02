@@ -34,6 +34,17 @@ const App = {
   hataDersFilter: '',
   hataTurFilter: '',
 
+  // Havuz & Portföy State
+  poolModulFilter: '',
+  poolSinifFilter: '',
+  poolAktifDersId: '',
+
+  libraryModulFilter: '',
+  librarySearchQuery: '',
+
+  studentsModulFilter: '',
+  studentsSearchQuery: '',
+
   init() {
     Store.init();
     this.applyTheme(this.currentTheme);
@@ -99,18 +110,14 @@ const App = {
   },
 
   getDers(dersId) {
-    if (typeof DERSLER !== 'undefined' && Array.isArray(DERSLER)) {
-      const d = DERSLER.find(item => item.id === dersId);
-      if (d) return d;
-    }
+    const d = Store.getDers(dersId);
+    if (d) return d;
     return { id: dersId, ad: dersId || 'Genel', renk: 'blue', kisaltma: 'DRS', ikon: 'book' };
   },
 
   getKonu(konuId) {
-    if (typeof KONULAR !== 'undefined' && Array.isArray(KONULAR)) {
-      const k = KONULAR.find(item => item.id === konuId);
-      if (k) return k;
-    }
+    const k = Store.getKonu(konuId);
+    if (k) return k;
     return { id: konuId, konuAdi: konuId || 'Genel Konu' };
   },
 
@@ -179,10 +186,13 @@ const App = {
       case 'cizelge-robotu':
         break;
       case 'curriculum-pool':
+        this.renderCurriculumPool();
         break;
       case 'library':
+        this.renderLibrary();
         break;
       case 'students':
+        this.renderStudents();
         break;
       case 'sinav-notlari':
         break;
@@ -1800,46 +1810,103 @@ const App = {
     }
   },
 
-  openKaynakModal() {
+  openKaynakModal(kaynakId = null) {
+    const isEdit = Boolean(kaynakId);
+    const kaynak = isEdit ? Store.getKaynak(kaynakId) : null;
     const ogr = Store.getAktifOgrenci();
-    const dersler = ogr ? Store.getDerslerForOgrenci(ogr) : [];
+    const dersler = ogr ? Store.getDerslerForOgrenci(ogr) : Store.getDersler();
+
+    const moduller = typeof MODULLER !== 'undefined' ? MODULLER : [];
+    const turler = ['Soru Bankası', 'Deneme', 'Fasikül', 'Kaynak Kitap', 'Diğer'];
+    const seciliModuller = kaynak && Array.isArray(kaynak.modulId)
+      ? kaynak.modulId
+      : (kaynak && kaynak.modulId ? [kaynak.modulId] : ['yks']);
+
+    const seciliTur = kaynak ? kaynak.tur || 'Soru Bankası' : 'Soru Bankası';
+    const seciliZorluk = kaynak ? Math.max(1, Math.min(5, Number(kaynak.zorluk) || 3)) : 3;
+    const seciliDersId = kaynak ? kaynak.dersId || '' : '';
 
     const dersOptions = `<option value="">— Genel (Tüm Dersler) —</option>` +
-      dersler.map(d => `<option value="${d.id}">${d.ad}</option>`).join('');
+      dersler.map(d => `<option value="${d.id}" ${seciliDersId === d.id ? 'selected' : ''}>${d.ad}</option>`).join('');
 
     const html = `
       <div class="space-y-4">
         <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
           <div>
-            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Yeni Kaynak Ekle</h3>
-            <p class="text-xs text-[var(--color-ink-muted)]">Kütüphaneye yeni bir yayın veya soru bankası kaydedin.</p>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">${isEdit ? 'Kaynağı Düzenle' : 'Yeni Kaynak Ekle'}</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Kütüphaneye yeni bir yayın, soru bankası veya deneme kaydedin.</p>
           </div>
           <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
 
-        <form id="form-yeni-kaynak" class="space-y-3 text-xs">
+        <form id="form-kaynak" class="space-y-3.5 text-xs">
+          <!-- Yayın Adı -->
           <div>
-            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Yayınevi / Yayıncı <span class="text-[var(--color-danger)]">*</span></label>
-            <input type="text" id="kyn-yayinevi" required placeholder="Örn: Bilgi Sarmal, Hız Yayınları, Limit" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            <label class="block font-semibold text-[var(--color-ink)] mb-1">Yayın / Kitap Adı <span class="text-[var(--color-danger)]">*</span></label>
+            <input type="text" id="kyn-input-ad" value="${kaynak ? kaynak.ad : ''}" required placeholder="Örn: Nitelik Süper LGS Soru Bankası" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
           </div>
 
-          <div>
-            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Kaynak Başlığı / Adı <span class="text-[var(--color-danger)]">*</span></label>
-            <input type="text" id="kyn-ad" required placeholder="Örn: Soru Bankası, Master Deneme Seti" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+          <!-- Yayınevi & Tür -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Yayınevi <span class="text-[var(--color-danger)]">*</span></label>
+              <input type="text" id="kyn-input-yayinevi" value="${kaynak ? kaynak.yayinevi : ''}" required placeholder="Örn: Nitelik, Bilgi Sarmal, Hız" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            </div>
+            <div>
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Türü</label>
+              <select id="kyn-input-tur" class="select-instrument w-full p-2">
+                ${turler.map(t => `<option value="${t}" ${seciliTur === t ? 'selected' : ''}>${t}</option>`).join('')}
+              </select>
+            </div>
           </div>
 
+          <!-- Ders İlişkisi -->
           <div>
-            <label class="block font-medium text-[var(--color-ink-faint)] mb-1">Ders İlişkisi</label>
-            <select id="kyn-ders" class="select-instrument w-full p-2">
+            <label class="block font-semibold text-[var(--color-ink)] mb-1">Ders İlişkisi</label>
+            <select id="kyn-input-ders" class="select-instrument w-full p-2">
               ${dersOptions}
             </select>
           </div>
 
+          <!-- Hedef Modüller (Checkboxes) -->
+          <div>
+            <label class="block font-semibold text-[var(--color-ink)] mb-1.5">Hedef Eğitim Kademesi / Modüller</label>
+            <div class="flex items-center gap-4 flex-wrap">
+              ${moduller.map(m => `
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" name="kyn-modul" value="${m.id}" ${seciliModuller.includes(m.id) ? 'checked' : ''} class="rounded border-[var(--color-rule)] text-[var(--color-accent)]">
+                  <span class="text-[var(--color-ink)] font-medium">${m.ad}</span>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Zorluk Derecesi (1-5 Slider) -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="font-semibold text-[var(--color-ink)]">Zorluk Seviyesi</label>
+              <span id="kyn-zorluk-val" class="font-mono font-bold text-[var(--color-accent)]">${seciliZorluk} / 5</span>
+            </div>
+            <input type="range" id="kyn-input-zorluk" min="1" max="5" value="${seciliZorluk}" oninput="document.getElementById('kyn-zorluk-val').textContent = this.value + ' / 5'" class="w-full accent-[var(--color-accent)] cursor-pointer">
+            <div class="flex justify-between text-[10px] text-[var(--color-ink-muted)] px-0.5">
+              <span>1 (Temel)</span>
+              <span>3 (Orta)</span>
+              <span>5 (İleri / Maraton)</span>
+            </div>
+          </div>
+
+          <!-- Açıklama -->
+          <div>
+            <label class="block font-semibold text-[var(--color-ink)] mb-1">Açıklama / Not</label>
+            <textarea id="kyn-input-aciklama" class="input-editorial w-full text-xs p-2.5 h-16" placeholder="Kaynak içeriği, yeni nesil soru oranı...">${kaynak ? (kaynak.aciklama || '') : ''}</textarea>
+          </div>
+
+          <!-- Butonlar -->
           <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
-            <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">Vazgeç</button>
-            <button type="submit" class="btn-tactile btn-tactile-primary">Kaynağı Ekle</button>
+            <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">İptal</button>
+            <button type="submit" class="btn-tactile btn-tactile-primary">${isEdit ? 'Değişiklikleri Kaydet' : 'Kaynağı Ekle'}</button>
           </div>
         </form>
       </div>
@@ -1847,35 +1914,44 @@ const App = {
 
     this.openModal(html);
 
-    const form = document.getElementById('form-yeni-kaynak');
+    const form = document.getElementById('form-kaynak');
     if (form) {
       form.addEventListener('submit', (e) => {
         e.preventDefault();
-        const yayinevi = document.getElementById('kyn-yayinevi').value.trim();
-        const ad = document.getElementById('kyn-ad').value.trim();
-        const dersId = document.getElementById('kyn-ders').value;
+        const ad = document.getElementById('kyn-input-ad').value.trim();
+        const yayinevi = document.getElementById('kyn-input-yayinevi').value.trim();
+        const tur = document.getElementById('kyn-input-tur').value;
+        const dersId = document.getElementById('kyn-input-ders').value;
+        const zorluk = parseInt(document.getElementById('kyn-input-zorluk').value) || 3;
+        const aciklama = document.getElementById('kyn-input-aciklama').value.trim();
 
-        if (!yayinevi || !ad) {
-          this.showToast('Lütfen yayınevi ve kaynak adını giriniz.');
+        const secilenModuller = Array.from(document.querySelectorAll('input[name="kyn-modul"]:checked')).map(cb => cb.value);
+        const modulId = secilenModuller.length > 0 ? secilenModuller : ['yks'];
+
+        if (!ad || !yayinevi) {
+          this.showToast('Lütfen yayın adı ve yayınevini giriniz.');
           return;
         }
 
-        const yeni = Store.addKaynak({ ad, yayinevi, dersId });
+        if (isEdit) {
+          Store.updateKaynak(kaynakId, { ad, yayinevi, tur, dersId, zorluk, aciklama, modulId });
+          this.showToast('Kaynak güncellendi');
+        } else {
+          const yeni = Store.addKaynak({ ad, yayinevi, tur, dersId, zorluk, aciklama, modulId });
 
-        // Aktif öğrencinin seçili kaynaklarına otomatik ekle
-        if (ogr) {
-          const sec = Array.isArray(ogr.seciliKaynaklar) ? [...ogr.seciliKaynaklar] : [];
-          if (!sec.includes(yeni.id)) {
-            sec.push(yeni.id);
-            Store.updateOgrenci(ogr.id, { seciliKaynaklar: sec });
+          // Eğer aktif öğrenci varsa, seçili kaynaklarına otomatik ekle
+          if (ogr) {
+            const sec = Array.isArray(ogr.seciliKaynaklar) ? [...ogr.seciliKaynaklar] : [];
+            if (!sec.includes(yeni.id)) {
+              sec.push(yeni.id);
+              Store.updateOgrenci(ogr.id, { seciliKaynaklar: sec });
+            }
           }
+          this.showToast(`${yayinevi} - ${ad} kaynağı eklendi`);
         }
 
         this.closeModal();
-        this.showToast(`${yayinevi} - ${ad} kaynağı eklendi`);
-        if (this.currentView === 'matrix') {
-          this.renderMatrix();
-        }
+        this.renderCurrentView();
       });
     }
   },
@@ -3278,6 +3354,1048 @@ const App = {
 
     this.closeModal();
     this.renderHataDefteri();
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // VIEW 7: MÜFREDAT & DERS HAVUZU (renderCurriculumPool)
+  // ─────────────────────────────────────────────────────────────
+  renderCurriculumPool() {
+    const container = document.getElementById('view-curriculum-pool');
+    if (!container) return;
+
+    const moduller = typeof MODULLER !== 'undefined' ? MODULLER : [];
+    const siniflar = typeof SINIFLAR !== 'undefined' ? SINIFLAR : [];
+    const allDersler = Store.getDersler();
+
+    // Filtreleme
+    const filteredDersler = allDersler.filter(d => {
+      if (this.poolModulFilter && d.modulId !== this.poolModulFilter) return false;
+      if (this.poolSinifFilter && d.sinif !== this.poolSinifFilter && d.sinif !== 'ortak') return false;
+      return true;
+    });
+
+    // Aktif dersi ayarla
+    if (!this.poolAktifDersId || !filteredDersler.some(d => d.id === this.poolAktifDersId)) {
+      this.poolAktifDersId = filteredDersler.length > 0 ? filteredDersler[0].id : '';
+    }
+
+    const seciliDers = this.poolAktifDersId ? Store.getDers(this.poolAktifDersId) : null;
+    const dersKonulari = seciliDers ? Store.getKonularForDers(seciliDers.id) : [];
+
+    // Konuları ünitelerine göre grupla
+    const unitelerMap = new Map();
+    dersKonulari.forEach(k => {
+      const uNo = Number(k.uniteNo) || 1;
+      const uAdi = k.uniteAdi || `Ünite ${uNo}`;
+      const key = `${uNo}:::${uAdi}`;
+      if (!unitelerMap.has(key)) {
+        unitelerMap.set(key, { no: uNo, ad: uAdi, konular: [] });
+      }
+      unitelerMap.get(key).konular.push(k);
+    });
+
+    const uniteler = Array.from(unitelerMap.values()).sort((a, b) => a.no - b.no);
+    uniteler.forEach(u => u.konular.sort((a, b) => (Number(a.siraNo) || 1) - (Number(b.siraNo) || 1)));
+
+    // Sınıf filtre seçenekleri (seçili modüle göre)
+    const sinifOptions = siniflar
+      .filter(s => !this.poolModulFilter || s.modulId === this.poolModulFilter)
+      .map(s => `<option value="${s.deger}" ${this.poolSinifFilter === s.deger ? 'selected' : ''}>${s.label}</option>`)
+      .join('');
+
+    let html = `
+      <div class="p-6 max-w-7xl mx-auto space-y-6">
+        <!-- Bölüm 1: Araç Çubuğu -->
+        <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 p-4 rounded-[var(--radius-lg)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] shadow-sm">
+          <!-- Sol Kısım: Başlık & Filtreler -->
+          <div class="flex flex-wrap items-center gap-3">
+            <div>
+              <h2 class="font-display font-bold text-lg text-[var(--color-ink)] leading-tight">Müfredat & Ders Havuzu</h2>
+              <p class="text-xs text-[var(--color-ink-muted)]">MEB/ÖSYM kazanım standartları ve özel ders müfredatı yönetimi</p>
+            </div>
+
+            <div class="h-6 w-px bg-[var(--color-rule)] hidden sm:block"></div>
+
+            <div class="flex items-center gap-2">
+              <label for="pool-modul-filter" class="text-xs font-medium text-[var(--color-ink-muted)]">Modül:</label>
+              <select id="pool-modul-filter" onchange="App.poolModulFilter = this.value; App.poolSinifFilter = ''; App.renderCurriculumPool();" class="select-instrument text-xs py-1.5 px-3 min-w-[140px]">
+                <option value="">Tüm Modüller</option>
+                ${moduller.map(m => `<option value="${m.id}" ${this.poolModulFilter === m.id ? 'selected' : ''}>${m.ad}</option>`).join('')}
+              </select>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <label for="pool-sinif-filter" class="text-xs font-medium text-[var(--color-ink-muted)]">Sınıf:</label>
+              <select id="pool-sinif-filter" onchange="App.poolSinifFilter = this.value; App.renderCurriculumPool();" class="select-instrument text-xs py-1.5 px-3 min-w-[120px]">
+                <option value="">Tüm Sınıflar</option>
+                ${sinifOptions}
+              </select>
+            </div>
+          </div>
+
+          <!-- Sağ Kısım: Butonlar -->
+          <div class="flex items-center gap-2.5">
+            <button onclick="App.openConfirmModal('Müfredatı Sıfırla', 'Müfredat standart MEB/ÖSYM fabrika ayarlarına sıfırlanacaktır. Eklediğiniz özel ders ve konular silinecektir. Onaylıyor musunuz?', () => { Store.resetCurriculum(); App.renderCurriculumPool(); App.showToast('Müfredat fabrika ayarlarına sıfırlandı'); });" class="btn-tactile btn-tactile-ghost text-xs py-1.5 px-3 text-[var(--color-ink-faint)] hover:text-[var(--color-danger)]" title="Müfredatı Fabrika Ayarlarına Döndür">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+              <span>Müfredatı Sıfırla</span>
+            </button>
+            <button onclick="App.openDersModal()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-4 shadow-sm">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>+ Ders Ekle</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bölüm 2: Ders & Konu Listesi Grid (4/12 & 8/12) -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <!-- Sol Panel (4/12): Ders Listesi -->
+          <div class="lg:col-span-4 bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-lg)] p-4 space-y-3">
+            <div class="flex items-center justify-between pb-2 border-b border-[var(--color-rule)]">
+              <span class="text-xs font-bold uppercase tracking-wider text-[var(--color-ink)]">Dersler (${filteredDersler.length})</span>
+              <span class="text-[10px] text-[var(--color-ink-muted)]">Tıklayarak konuları açın</span>
+            </div>
+
+            <div class="space-y-2 max-h-[680px] overflow-y-auto pr-1">
+              ${filteredDersler.length === 0 ? `
+                <div class="p-8 text-center text-xs text-[var(--color-ink-muted)] italic">
+                  Seçili filtrelere uygun ders bulunamadı.
+                </div>
+              ` : filteredDersler.map(d => {
+                const isSelected = seciliDers && d.id === seciliDers.id;
+                const mod = moduller.find(m => m.id === d.modulId);
+                const modAd = mod ? mod.kisaltma : d.modulId;
+                const sinifStr = d.sinif === 'ortak' ? 'Ortak' : (d.sinif ? `${d.sinif}. Sınıf` : '');
+                const kCount = Store.getKonularForDers(d.id).length;
+
+                return `
+                  <div onclick="App.poolAktifDersId = '${d.id}'; App.renderCurriculumPool();" class="group relative flex items-center justify-between p-3 rounded-[var(--radius-md)] border transition-all cursor-pointer ${isSelected ? 'bg-[var(--color-paper-3)] border-[var(--color-accent)] shadow-xs' : 'bg-[var(--color-paper-1)] border-[var(--color-rule)] hover:border-[var(--color-rule-strong)]'}">
+                    <!-- Sol Kenar Renk Şeridi -->
+                    <div class="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-${d.renk || 'blue'}-500"></div>
+
+                    <div class="pl-2 min-w-0 flex-1 space-y-1">
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <span class="font-display font-bold text-xs text-[var(--color-ink)] truncate">${d.ad}</span>
+                        <span class="text-[9px] font-mono px-1 py-0.5 rounded bg-[var(--color-paper-4)] text-[var(--color-ink-muted)] border border-[var(--color-rule)] font-semibold">${d.kisaltma || 'DRS'}</span>
+                      </div>
+                      <div class="flex items-center gap-1.5 text-[10px] text-[var(--color-ink-muted)]">
+                        <span class="meta-pill text-[9px] py-0 px-1.5">${modAd}</span>
+                        ${sinifStr ? `<span>${sinifStr}</span> · ` : ''}
+                        <span>${kCount} konu</span>
+                      </div>
+                    </div>
+
+                    <!-- Aksiyon İkonları -->
+                    <div class="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity" onclick="event.stopPropagation()">
+                      <button onclick="App.openDersModal('${d.id}')" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-4)] transition-colors" title="Dersi Düzenle">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <button onclick="App.openConfirmModal('Dersi Sil', '${d.ad} dersi ve bu derse ait tüm konular kalıcı olarak silinecektir. Onaylıyor musunuz?', () => { Store.deleteDers('${d.id}'); App.renderCurriculumPool(); App.showToast('Ders ve konuları silindi'); });" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors" title="Dersi Sil">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                      </button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <!-- Sağ Panel (8/12): Seçili Dersin Konu Listesi -->
+          <div class="lg:col-span-8 bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-lg)] p-5 space-y-5">
+            ${!seciliDers ? `
+              <div class="p-12 text-center text-xs text-[var(--color-ink-muted)] space-y-3">
+                <i data-lucide="book-open" class="w-10 h-10 text-[var(--color-ink-faint)] mx-auto"></i>
+                <p>Konuları görüntülemek için sol taraftan bir ders seçin veya yeni bir ders ekleyin.</p>
+              </div>
+            ` : `
+              <!-- Üst Kısım: Seçili Ders Bilgisi & Ekleme Butonları -->
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[var(--color-rule)]">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 rounded-full bg-${seciliDers.renk || 'blue'}-500 shrink-0"></div>
+                    <h3 class="font-display font-bold text-base text-[var(--color-ink)]">${seciliDers.ad}</h3>
+                    <span class="meta-pill text-[10px]">${seciliDers.modulId.toUpperCase()}</span>
+                    ${seciliDers.sinif ? `<span class="meta-pill text-[10px]">${seciliDers.sinif === 'ortak' ? 'Ortak' : seciliDers.sinif + '. Sınıf'}</span>` : ''}
+                  </div>
+                  <p class="text-xs text-[var(--color-ink-muted)] mt-1">
+                    Toplam <strong class="text-[var(--color-ink)]">${dersKonulari.length}</strong> konu · ${uniteler.length} ünite ${seciliDers.haftalikSaat ? `· Haftada ${seciliDers.haftalikSaat} Saat` : ''}
+                  </p>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <button onclick="App.openUniteModal('${seciliDers.id}')" class="btn-tactile btn-tactile-ghost text-xs py-1.5 px-3">
+                    <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
+                    <span>+ Ünite Ekle</span>
+                  </button>
+                  <button onclick="App.openKonuModal('${seciliDers.id}')" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-3.5 shadow-sm">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    <span>+ Konu Ekle</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Konular Listesi (Ünite Gruplu) -->
+              <div class="space-y-5 max-h-[640px] overflow-y-auto pr-1">
+                ${uniteler.length === 0 ? `
+                  <div class="p-10 text-center bg-[var(--color-paper-1)] border border-[var(--color-rule)] rounded-[var(--radius-md)] space-y-3">
+                    <i data-lucide="list-plus" class="w-8 h-8 text-[var(--color-ink-faint)] mx-auto"></i>
+                    <h4 class="font-display font-bold text-sm text-[var(--color-ink)]">Henüz Konu Eklenmedi</h4>
+                    <p class="text-xs text-[var(--color-ink-muted)]">Bu derse ait kazanım ve konuları oluşturmak için "+ Konu Ekle" butonunu kullanın.</p>
+                    <button onclick="App.openKonuModal('${seciliDers.id}')" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-4 inline-flex items-center gap-1.5">
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                      <span>İlk Konuyu Ekle</span>
+                    </button>
+                  </div>
+                ` : uniteler.map(u => `
+                  <div class="border border-[var(--color-rule)] rounded-[var(--radius-md)] overflow-hidden bg-[var(--color-paper-1)]">
+                    <!-- Ünite Başlığı -->
+                    <div class="flex items-center justify-between p-2.5 px-3.5 bg-[var(--color-paper-3)] border-b border-[var(--color-rule)] text-xs">
+                      <div class="flex items-center gap-2 font-display font-bold text-[var(--color-ink)]">
+                        <span class="meta-pill text-[9px] font-mono">Ünite ${u.no}</span>
+                        <span>${u.ad}</span>
+                        <span class="text-[10px] font-normal text-[var(--color-ink-muted)]">(${u.konular.length} konu)</span>
+                      </div>
+                      <div class="flex items-center gap-1">
+                        <button onclick="App.openKonuModal('${seciliDers.id}', null, ${u.no}, '${encodeURIComponent(u.ad)}')" class="btn-tactile btn-tactile-ghost text-[10px] py-1 px-2" title="Bu üniteye yeni konu ekle">
+                          <i data-lucide="plus" class="w-3 h-3"></i>
+                          <span>Konu Ekle</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Konu Satırları -->
+                    <div class="divide-y divide-[var(--color-rule)]">
+                      ${u.konular.map((k, kIdx) => `
+                        <div class="flex items-center justify-between p-2.5 px-3.5 hover:bg-[var(--color-paper-2)] transition-colors text-xs group">
+                          <div class="flex items-start gap-3 min-w-0 pr-2">
+                            <span class="font-mono text-[10px] text-[var(--color-ink-faint)] w-5 pt-0.5 shrink-0 text-right">${k.siraNo || kIdx + 1}.</span>
+                            <div class="min-w-0">
+                              <span class="font-medium text-[var(--color-ink)] leading-snug block">${k.konuAdi}</span>
+                              ${k.aciklama ? `<span class="text-[11px] text-[var(--color-ink-muted)] leading-tight block mt-0.5">${k.aciklama}</span>` : ''}
+                            </div>
+                          </div>
+
+                          <div class="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity shrink-0">
+                            <button onclick="App.openKonuModal('${seciliDers.id}', '${k.id}')" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-3)] transition-colors" title="Konuyu Düzenle">
+                              <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button onclick="App.openConfirmModal('Konuyu Sil', '${k.konuAdi} konusu silinecektir. Emin misiniz?', () => { Store.deleteKonu('${k.id}'); App.renderCurriculumPool(); App.showToast('Konu silindi'); });" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors" title="Konuyu Sil">
+                              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                          </div>
+                        </div>
+                      `).join('')}
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+      </div>
+    `;
+
+    container.innerHTML = html;
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  },
+
+  openDersModal(dersId = null) {
+    const isEdit = Boolean(dersId);
+    const d = isEdit ? Store.getDers(dersId) : null;
+
+    const moduller = typeof MODULLER !== 'undefined' ? MODULLER : [];
+    const siniflar = typeof SINIFLAR !== 'undefined' ? SINIFLAR : [];
+    const renkler = ['rose', 'blue', 'emerald', 'amber', 'purple', 'teal', 'orange', 'cyan', 'indigo', 'slate'];
+
+    const seciliModulId = d ? d.modulId : (this.poolModulFilter || 'yks');
+    const seciliSinif = d ? String(d.sinif || 'ortak') : 'ortak';
+    const seciliRenk = d ? d.renk || 'blue' : 'blue';
+
+    const html = `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
+          <div>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">${isEdit ? 'Dersi Düzenle' : 'Yeni Ders Ekle'}</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Müfredat havuzuna ders tanımı ve parametrelerini kaydedin.</p>
+          </div>
+          <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <form id="form-ders" class="space-y-3.5 text-xs">
+          <!-- Ders Adı & Kısaltma -->
+          <div class="grid grid-cols-3 gap-3">
+            <div class="col-span-2">
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Ders Adı <span class="text-[var(--color-danger)]">*</span></label>
+              <input type="text" id="ders-input-ad" value="${d ? d.ad : ''}" required placeholder="Örn: Geometri, Biyoloji" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            </div>
+            <div>
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Kısaltma <span class="text-[var(--color-danger)]">*</span></label>
+              <input type="text" id="ders-input-kisaltma" maxlength="5" value="${d ? d.kisaltma : ''}" required placeholder="GEO" class="w-full p-2 uppercase font-mono rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            </div>
+          </div>
+
+          <!-- Modül & Sınıf -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Modül *</label>
+              <select id="ders-input-modul" class="select-instrument w-full p-2">
+                ${moduller.map(m => `<option value="${m.id}" ${m.id === seciliModulId ? 'selected' : ''}>${m.ad}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Kademesi / Sınıf</label>
+              <select id="ders-input-sinif" class="select-instrument w-full p-2">
+                <option value="ortak" ${seciliSinif === 'ortak' ? 'selected' : ''}>Ortak (Tüm Kademeler)</option>
+                ${siniflar.map(s => `<option value="${s.deger}" ${String(s.deger) === seciliSinif ? 'selected' : ''}>${s.label}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+
+          <!-- Haftalık Saat & Sınavda Mı? & Soru Sayısı -->
+          <div class="grid grid-cols-3 gap-3 items-center">
+            <div>
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Haftalık Saat</label>
+              <input type="number" id="ders-input-saat" min="0" max="40" value="${d ? d.haftalikSaat || 0 : 4}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            </div>
+            <div>
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Sınav Sorusu</label>
+              <input type="number" id="ders-input-soru" min="0" max="100" value="${d ? d.soruSayisi || 0 : 0}" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            </div>
+            <div class="pt-5 flex items-center gap-2">
+              <input type="checkbox" id="ders-input-sinavda" ${d && d.sinavdaMi ? 'checked' : ''} class="rounded border-[var(--color-rule)] text-[var(--color-accent)]">
+              <label for="ders-input-sinavda" class="font-medium text-[var(--color-ink)] select-none">Sınav Kapsamında</label>
+            </div>
+          </div>
+
+          <!-- Renk Seçimi -->
+          <div>
+            <label class="block font-semibold text-[var(--color-ink)] mb-1.5">Ders Vurgu Rengi</label>
+            <div class="flex items-center gap-2 flex-wrap">
+              ${renkler.map(r => `
+                <label class="cursor-pointer">
+                  <input type="radio" name="ders-renk" value="${r}" class="sr-only peer" ${seciliRenk === r ? 'checked' : ''}>
+                  <div class="w-6 h-6 rounded-full bg-${r}-500 border-2 border-transparent peer-checked:border-[var(--color-ink)] transition-all"></div>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Butonlar -->
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
+            <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">İptal</button>
+            <button type="submit" class="btn-tactile btn-tactile-primary">${isEdit ? 'Değişiklikleri Kaydet' : 'Dersi Ekle'}</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    this.openModal(html);
+
+    const form = document.getElementById('form-ders');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const ad = document.getElementById('ders-input-ad').value.trim();
+        const kisaltma = document.getElementById('ders-input-kisaltma').value.trim();
+        const modulId = document.getElementById('ders-input-modul').value;
+        const sinif = document.getElementById('ders-input-sinif').value;
+        const haftalikSaat = parseInt(document.getElementById('ders-input-saat').value) || 0;
+        const soruSayisi = parseInt(document.getElementById('ders-input-soru').value) || 0;
+        const sinavdaMi = document.getElementById('ders-input-sinavda').checked;
+        const secilenRenkEl = document.querySelector('input[name="ders-renk"]:checked');
+        const renk = secilenRenkEl ? secilenRenkEl.value : 'blue';
+
+        if (!ad || !kisaltma) {
+          this.showToast('Lütfen ders adı ve kısaltmasını girin.');
+          return;
+        }
+
+        if (isEdit) {
+          Store.updateDers(dersId, { ad, kisaltma, modulId, sinif, haftalikSaat, soruSayisi, sinavdaMi, renk });
+          this.showToast('Ders güncellendi');
+        } else {
+          const yeni = Store.addDers({ ad, kisaltma, modulId, sinif, haftalikSaat, soruSayisi, sinavdaMi, renk });
+          this.poolAktifDersId = yeni.id;
+          this.showToast('Yeni ders havuza eklendi');
+        }
+
+        this.closeModal();
+        this.renderCurriculumPool();
+      });
+    }
+  },
+
+  openKonuModal(dersId, konuId = null, defaultUniteNo = null, defaultUniteAdi = null) {
+    const isEdit = Boolean(konuId);
+    const ders = Store.getDers(dersId);
+    const konu = isEdit ? Store.getKonu(konuId) : null;
+    if (!ders) return;
+
+    const dersKonulari = Store.getKonularForDers(dersId);
+    const sonUniteNo = dersKonulari.length > 0 ? Math.max(...dersKonulari.map(k => Number(k.uniteNo) || 1)) : 1;
+
+    const uniteNo = konu ? konu.uniteNo : (defaultUniteNo || sonUniteNo);
+    const uniteAdi = konu ? konu.uniteAdi : (defaultUniteAdi ? decodeURIComponent(defaultUniteAdi) : `Ünite ${uniteNo}`);
+    const siraNo = konu ? (konu.siraNo || 1) : (dersKonulari.filter(k => (Number(k.uniteNo) || 1) === uniteNo).length + 1);
+
+    const html = `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
+          <div>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">${isEdit ? 'Konuyu Düzenle' : 'Yeni Konu Ekle'}</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]"><strong>${ders.ad}</strong> dersi için konu ve kazanım tanımı</p>
+          </div>
+          <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <form id="form-konu" class="space-y-3.5 text-xs">
+          <!-- Ders Adı (Disabled) -->
+          <div>
+            <label class="block font-semibold text-[var(--color-ink-muted)] mb-1">Ders</label>
+            <input type="text" disabled value="${ders.ad} (${ders.kisaltma || 'DRS'})" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-4)] border border-[var(--color-rule)] text-[var(--color-ink-muted)]">
+          </div>
+
+          <!-- Ünite No & Ünite Adı -->
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Ünite No</label>
+              <input type="number" id="konu-input-unite-no" min="1" max="50" value="${uniteNo}" required class="w-full p-2 font-mono rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            </div>
+            <div class="col-span-2">
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Ünite Başlığı</label>
+              <input type="text" id="konu-input-unite-ad" value="${uniteAdi}" required placeholder="Örn: Fonksiyonlar, Hücre Bölünmesi" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            </div>
+          </div>
+
+          <!-- Konu Adı & Sıra No -->
+          <div class="grid grid-cols-4 gap-3">
+            <div class="col-span-3">
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Konu / Kazanım Adı <span class="text-[var(--color-danger)]">*</span></label>
+              <input type="text" id="konu-input-ad" value="${konu ? konu.konuAdi : ''}" required placeholder="Örn: Bileşke Fonksiyon ve Ters Fonksiyon" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            </div>
+            <div>
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Sıra No</label>
+              <input type="number" id="konu-input-sira" min="1" value="${siraNo}" class="w-full p-2 font-mono rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)] focus:outline-none focus:border-[var(--color-accent)]">
+            </div>
+          </div>
+
+          <!-- Açıklama -->
+          <div>
+            <label class="block font-semibold text-[var(--color-ink)] mb-1">Konu Açıklaması / Kazanım Detayı</label>
+            <textarea id="konu-input-aciklama" class="input-editorial w-full text-xs p-2.5 h-16" placeholder="Kazanım hedefleri, dikkat edilmesi gereken soru tipleri...">${konu ? (konu.aciklama || '') : ''}</textarea>
+          </div>
+
+          <!-- Butonlar -->
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
+            <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">İptal</button>
+            <button type="submit" class="btn-tactile btn-tactile-primary">${isEdit ? 'Değişiklikleri Kaydet' : 'Konuyu Ekle'}</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    this.openModal(html);
+
+    const form = document.getElementById('form-konu');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const konuAdi = document.getElementById('konu-input-ad').value.trim();
+        const uniteNoVal = parseInt(document.getElementById('konu-input-unite-no').value) || 1;
+        const uniteAdiVal = document.getElementById('konu-input-unite-ad').value.trim() || `Ünite ${uniteNoVal}`;
+        const siraNoVal = parseInt(document.getElementById('konu-input-sira').value) || 1;
+        const aciklama = document.getElementById('konu-input-aciklama').value.trim();
+
+        if (!konuAdi) {
+          this.showToast('Lütfen konu adını giriniz.');
+          return;
+        }
+
+        if (isEdit) {
+          Store.updateKonu(konuId, {
+            konuAdi,
+            uniteNo: uniteNoVal,
+            uniteAdi: uniteAdiVal,
+            siraNo: siraNoVal,
+            aciklama
+          });
+          this.showToast('Konu güncellendi');
+        } else {
+          Store.addKonu({
+            dersId: ders.id,
+            modulId: ders.modulId,
+            sinif: ders.sinif,
+            uniteNo: uniteNoVal,
+            uniteAdi: uniteAdiVal,
+            konuAdi,
+            siraNo: siraNoVal,
+            aciklama
+          });
+          this.showToast('Yeni konu eklendi');
+        }
+
+        this.closeModal();
+        this.renderCurriculumPool();
+      });
+    }
+  },
+
+  openUniteModal(dersId) {
+    const ders = Store.getDers(dersId);
+    if (!ders) return;
+
+    const dersKonulari = Store.getKonularForDers(dersId);
+    const maxUniteNo = dersKonulari.length > 0 ? Math.max(...dersKonulari.map(k => Number(k.uniteNo) || 1)) : 0;
+    const nextUniteNo = maxUniteNo + 1;
+
+    const html = `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
+          <div>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Yeni Ünite Ekle</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]"><strong>${ders.ad}</strong> dersi için yeni ünite başlığı oluşturun.</p>
+          </div>
+          <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <form id="form-unite" class="space-y-3.5 text-xs">
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Ünite No</label>
+              <input type="number" id="unite-input-no" min="1" value="${nextUniteNo}" required class="w-full p-2 font-mono rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)]">
+            </div>
+            <div class="col-span-2">
+              <label class="block font-semibold text-[var(--color-ink)] mb-1">Ünite Başlığı *</label>
+              <input type="text" id="unite-input-ad" required placeholder="Örn: Geometrik Cisimler" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)]">
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-[var(--color-ink)] mb-1">İlk Konu Adı *</label>
+            <input type="text" id="unite-input-ilk-konu" required placeholder="Örn: Prizmalar ve Temel Özellikler" class="w-full p-2 rounded-[var(--radius-sm)] bg-[var(--color-paper-3)] border border-[var(--color-rule)] text-[var(--color-ink)]">
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-rule)]">
+            <button type="button" onclick="App.closeModal()" class="btn-tactile btn-tactile-ghost">İptal</button>
+            <button type="submit" class="btn-tactile btn-tactile-primary">Üniteyi Oluştur</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    this.openModal(html);
+
+    const form = document.getElementById('form-unite');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const uNo = parseInt(document.getElementById('unite-input-no').value) || nextUniteNo;
+        const uAd = document.getElementById('unite-input-ad').value.trim();
+        const ilkKonu = document.getElementById('unite-input-ilk-konu').value.trim();
+
+        if (!uAd || !ilkKonu) {
+          this.showToast('Lütfen gerekli alanları doldurunuz.');
+          return;
+        }
+
+        Store.addKonu({
+          dersId: ders.id,
+          modulId: ders.modulId,
+          sinif: ders.sinif,
+          uniteNo: uNo,
+          uniteAdi: uAd,
+          konuAdi: ilkKonu,
+          siraNo: 1
+        });
+
+        this.closeModal();
+        this.renderCurriculumPool();
+        this.showToast(`"${uAd}" ünitesi oluşturuldu`);
+      });
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // VIEW 8: KAYNAK KÜTÜPHANESİ (renderLibrary)
+  // ─────────────────────────────────────────────────────────────
+  renderLibrary() {
+    const container = document.getElementById('view-library');
+    if (!container) return;
+
+    const moduller = typeof MODULLER !== 'undefined' ? MODULLER : [];
+    const allKaynaklar = Store.getKaynaklar();
+
+    // Filtreleme
+    const filtered = allKaynaklar.filter(k => {
+      if (this.libraryModulFilter) {
+        const kMods = Array.isArray(k.modulId) ? k.modulId : [k.modulId];
+        if (!kMods.includes(this.libraryModulFilter)) return false;
+      }
+      if (this.librarySearchQuery) {
+        const q = this.librarySearchQuery.toLowerCase();
+        const adMatch = (k.ad || '').toLowerCase().includes(q);
+        const yayMatch = (k.yayinevi || '').toLowerCase().includes(q);
+        if (!adMatch && !yayMatch) return false;
+      }
+      return true;
+    });
+
+    let html = `
+      <div class="p-6 max-w-7xl mx-auto space-y-6">
+        <!-- Bölüm 1: Araç Çubuğu -->
+        <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 p-4 rounded-[var(--radius-lg)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] shadow-sm">
+          <!-- Sol Kısım: Başlık & Filtreler -->
+          <div class="flex flex-wrap items-center gap-3">
+            <div>
+              <h2 class="font-display font-bold text-lg text-[var(--color-ink)] leading-tight">Kaynak & Yayın Kütüphanesi</h2>
+              <p class="text-xs text-[var(--color-ink-muted)]">Soru bankası, fasikül ve deneme setleri envanteri</p>
+            </div>
+
+            <div class="h-6 w-px bg-[var(--color-rule)] hidden sm:block"></div>
+
+            <div class="flex items-center gap-2">
+              <label for="library-modul-filter" class="text-xs font-medium text-[var(--color-ink-muted)]">Modül:</label>
+              <select id="library-modul-filter" onchange="App.libraryModulFilter = this.value; App.renderLibrary();" class="select-instrument text-xs py-1.5 px-3 min-w-[140px]">
+                <option value="">Tüm Modüller</option>
+                ${moduller.map(m => `<option value="${m.id}" ${this.libraryModulFilter === m.id ? 'selected' : ''}>${m.ad}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- Metin Arama -->
+            <div class="relative">
+              <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-[var(--color-ink-faint)]"></i>
+              <input type="text" id="library-search" value="${this.librarySearchQuery || ''}" oninput="App.librarySearchQuery = this.value; App.renderLibrary();" placeholder="Kaynak veya yayınevi ara..." class="input-editorial text-xs pl-8 pr-3 py-1.5 w-48 sm:w-56">
+            </div>
+          </div>
+
+          <!-- Sağ Kısım: Buton -->
+          <div>
+            <button onclick="App.openKaynakModal()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-4 shadow-sm">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>+ Kaynak Ekle</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bölüm 2: Kaynak Kartları Grid (3 Sütun) -->
+        ${filtered.length === 0 ? `
+          <div class="p-16 text-center bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-lg)] space-y-4">
+            <i data-lucide="library" class="w-12 h-12 text-[var(--color-ink-faint)] mx-auto"></i>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Kayıtlı Kaynak Bulunamadı</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Arama kriterlerinize uyan kaynak bulunmuyor. Yeni bir yayın eklemek için butona tıklayın.</p>
+            <button onclick="App.openKaynakModal()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-4 inline-flex items-center gap-1.5">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>+ Yeni Kaynak Ekle</span>
+            </button>
+          </div>
+        ` : `
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            ${filtered.map(k => {
+              const kMods = Array.isArray(k.modulId) ? k.modulId : [k.modulId || 'yks'];
+              const zorluk = Math.max(1, Math.min(5, Number(k.zorluk) || 3));
+              const cozulenSoru = Store.getKaynakCozulenSoruSayisi(k.id);
+
+              return `
+                <div class="card-editorial p-4 flex flex-col justify-between space-y-3.5 border border-[var(--color-rule)] hover:border-[var(--color-rule-strong)] transition-all">
+                  <div class="space-y-2.5">
+                    <!-- Üst Bilgi: Yayınevi & Tür -->
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-xs font-mono font-bold text-[var(--color-accent)] uppercase tracking-wider">${k.yayinevi || 'Genel Yayın'}</span>
+                      <span class="meta-pill text-[10px]">${k.tur || 'Soru Bankası'}</span>
+                    </div>
+
+                    <!-- Başlık -->
+                    <h3 class="font-display font-bold text-sm text-[var(--color-ink)] leading-snug line-clamp-2">
+                      ${k.ad}
+                    </h3>
+
+                    <!-- Açıklama -->
+                    ${k.aciklama ? `<p class="text-xs text-[var(--color-ink-muted)] line-clamp-2 italic">${k.aciklama}</p>` : ''}
+
+                    <!-- Modül Rozetleri & Zorluk Derecesi -->
+                    <div class="flex items-center justify-between pt-1">
+                      <div class="flex items-center gap-1 flex-wrap">
+                        ${kMods.map(mId => {
+                          const mObj = moduller.find(m => m.id === mId);
+                          return `<span class="meta-pill text-[9px] px-1.5 py-0.5">${mObj ? mObj.kisaltma : mId}</span>`;
+                        }).join('')}
+                      </div>
+
+                      <!-- Zorluk 1-5 Yıldız -->
+                      <div class="flex items-center gap-0.5 text-amber-500 text-xs" title="Zorluk Derecesi: ${zorluk} / 5">
+                        ${[1, 2, 3, 4, 5].map(star => `
+                          <i data-lucide="star" class="w-3 h-3 ${star <= zorluk ? 'fill-amber-500 text-amber-500' : 'text-[var(--color-rule-strong)]'}"></i>
+                        `).join('')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Alt Bilgi: Çözülen Soru Sayısı & İşlemler -->
+                  <div class="pt-3 border-t border-[var(--color-rule)] flex items-center justify-between text-xs">
+                    <span class="font-mono text-[11px] text-[var(--color-ink-muted)]">
+                      <strong class="text-[var(--color-ink)]">${cozulenSoru}</strong> soru çözüldü
+                    </span>
+
+                    <div class="flex items-center gap-1">
+                      <button onclick="App.openKaynakModal('${k.id}')" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-3)] transition-colors" title="Kaynağı Düzenle">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <button onclick="App.openConfirmModal('Kaynağı Sil', '${k.ad} kaynağı silinecektir. Bu kaynağa bağlı ödevler silinmeyecektir. Onaylıyor musunuz?', () => { Store.deleteKaynak('${k.id}'); App.renderLibrary(); App.showToast('Kaynak silindi'); });" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors" title="Kaynağı Sil">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `}
+      </div>
+    `;
+
+    container.innerHTML = html;
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // VIEW 9: ÖĞRENCİ PORTFÖYÜ (renderStudents)
+  // ─────────────────────────────────────────────────────────────
+  renderStudents() {
+    const container = document.getElementById('view-students');
+    if (!container) return;
+
+    const moduller = typeof MODULLER !== 'undefined' ? MODULLER : [];
+    const allStudents = Store.getOgrenciler();
+
+    // Filtreleme
+    const filtered = allStudents.filter(o => {
+      if (this.studentsModulFilter && o.modulId !== this.studentsModulFilter) return false;
+      if (this.studentsSearchQuery) {
+        const q = this.studentsSearchQuery.toLowerCase();
+        const adMatch = `${o.ad || ''} ${o.soyad || ''}`.toLowerCase().includes(q);
+        const okulMatch = (o.okul || '').toLowerCase().includes(q);
+        if (!adMatch && !okulMatch) return false;
+      }
+      return true;
+    });
+
+    let html = `
+      <div class="p-6 max-w-7xl mx-auto space-y-6">
+        <!-- Bölüm 1: Araç Çubuğu -->
+        <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 p-4 rounded-[var(--radius-lg)] bg-[var(--color-paper-2)] border border-[var(--color-rule)] shadow-sm">
+          <!-- Sol Kısım: Başlık & Filtreler -->
+          <div class="flex flex-wrap items-center gap-3">
+            <div>
+              <h2 class="font-display font-bold text-lg text-[var(--color-ink)] leading-tight">Öğrenci Portföyü</h2>
+              <p class="text-xs text-[var(--color-ink-muted)]">Kayıtlı öğrenciler, müfredat durumları ve Excel entegrasyonu</p>
+            </div>
+
+            <div class="h-6 w-px bg-[var(--color-rule)] hidden sm:block"></div>
+
+            <div class="flex items-center gap-2">
+              <label for="students-modul-filter" class="text-xs font-medium text-[var(--color-ink-muted)]">Modül:</label>
+              <select id="students-modul-filter" onchange="App.studentsModulFilter = this.value; App.renderStudents();" class="select-instrument text-xs py-1.5 px-3 min-w-[140px]">
+                <option value="">Tüm Modüller</option>
+                ${moduller.map(m => `<option value="${m.id}" ${this.studentsModulFilter === m.id ? 'selected' : ''}>${m.ad}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- Metin Arama -->
+            <div class="relative">
+              <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-2.5 text-[var(--color-ink-faint)]"></i>
+              <input type="text" id="students-search" value="${this.studentsSearchQuery || ''}" oninput="App.studentsSearchQuery = this.value; App.renderStudents();" placeholder="Öğrenci veya okul ara..." class="input-editorial text-xs pl-8 pr-3 py-1.5 w-48 sm:w-56">
+            </div>
+          </div>
+
+          <!-- Sağ Kısım: Excel & Yeni Öğrenci Butonları -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="ExcelEngine.sablonIndir()" class="btn-tactile btn-tactile-ghost text-xs py-1.5 px-2.5" title="Örnek Excel Şablonunu İndir">
+              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>
+              <span>Şablon</span>
+            </button>
+            <button onclick="App.openExcelIceAktarModal()" class="btn-tactile btn-tactile-ghost text-xs py-1.5 px-2.5" title="Excel'den Öğrenci Yükle">
+              <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+              <span>Excel'den Al</span>
+            </button>
+            <button onclick="ExcelEngine.ogrenciDisaAktar()" class="btn-tactile btn-tactile-ghost text-xs py-1.5 px-2.5" title="Öğrencileri Excel Olarak Dışa Aktar">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>Excel'e Aktar</span>
+            </button>
+            <button onclick="App.openOgrenciModal()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-3.5 shadow-sm">
+              <i data-lucide="user-plus" class="w-4 h-4"></i>
+              <span>+ Yeni Öğrenci</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bölüm 2: Öğrenci Kartları Grid (3 Sütun) -->
+        ${filtered.length === 0 ? `
+          <div class="p-16 text-center bg-[var(--color-paper-2)] border border-[var(--color-rule)] rounded-[var(--radius-lg)] space-y-4">
+            <i data-lucide="users" class="w-12 h-12 text-[var(--color-ink-faint)] mx-auto"></i>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Henüz Öğrenci Eklenmedi</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Öğrenci portföyünüze manuel olarak öğrenci ekleyebilir veya Excel listesi ile toplu içe aktarabilirsiniz.</p>
+            <div class="flex items-center justify-center gap-3 pt-2">
+              <button onclick="App.openOgrenciModal()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-4 inline-flex items-center gap-1.5">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>Manuel Ekle</span>
+              </button>
+              <button onclick="App.openExcelIceAktarModal()" class="btn-tactile btn-tactile-ghost text-xs py-1.5 px-4 inline-flex items-center gap-1.5">
+                <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                <span>Excel'den İçe Aktar</span>
+              </button>
+            </div>
+          </div>
+        ` : `
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            ${filtered.map(ogr => {
+              const mod = Store.getModulForOgrenci(ogr);
+              const modAd = mod ? mod.ad : (ogr.modulId || 'Müfredat');
+              const isAktif = String(ogr.id) === String(Store.data.aktifOgrenciId);
+
+              // İlerleme hesabı
+              const ogrDersler = Store.getDerslerForOgrenci(ogr);
+              let totalKonular = 0;
+              let tamamKonular = 0;
+              ogrDersler.forEach(d => {
+                const kList = Store.getKonularForDers(d.id);
+                totalKonular += kList.length;
+                kList.forEach(k => {
+                  const kd = Store.getKonuDurumu(ogr.id, k.id);
+                  if (kd.durum === 'tamam') tamamKonular++;
+                });
+              });
+              const ilerlemePct = totalKonular > 0 ? Math.round((tamamKonular / totalKonular) * 100) : 0;
+
+              // Görevler
+              const aktifGorevCount = Store.getAktifGorevler(ogr.id).length;
+              const gecikmisGorevCount = Store.getGecikmisGorevler(ogr.id).length;
+
+              const basHarfler = ((ogr.ad ? ogr.ad[0] : '') + (ogr.soyad ? ogr.soyad[0] : '')).toUpperCase();
+
+              return `
+                <div class="card-editorial p-5 flex flex-col justify-between space-y-4 border ${isAktif ? 'border-[var(--color-accent)] ring-1 ring-[var(--color-accent)] bg-[var(--color-accent-subtle)]/15' : 'border-[var(--color-rule)] hover:border-[var(--color-rule-strong)]'} transition-all">
+                  <div class="space-y-3.5">
+                    <!-- Üst Başlık: Avatar & İsim & Modül -->
+                    <div class="flex items-start gap-3">
+                      <div class="w-11 h-11 rounded-[var(--radius-sm)] bg-${ogr.renk || 'teal'}-500/15 border border-${ogr.renk || 'teal'}-500/30 text-${ogr.renk || 'teal'}-600 dark:text-${ogr.renk || 'teal'}-400 font-display font-black text-sm flex items-center justify-center shrink-0">
+                        ${basHarfler || 'ÖG'}
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center justify-between gap-1">
+                          <h3 class="font-display font-bold text-sm text-[var(--color-ink)] truncate">${ogr.ad} ${ogr.soyad}</h3>
+                          <span class="meta-pill text-[9px]">${ogr.sinif ? ogr.sinif + '. Sınıf' : ''}</span>
+                        </div>
+                        <div class="text-[11px] text-[var(--color-ink-muted)] truncate">${ogr.okul || 'Okul belirtilmedi'}</div>
+                        <div class="text-[10px] text-[var(--color-accent)] font-semibold mt-0.5">${modAd}</div>
+                      </div>
+                    </div>
+
+                    <!-- Hedef -->
+                    ${ogr.hedef ? `
+                      <div class="text-xs text-[var(--color-ink-muted)] italic bg-[var(--color-paper-3)] p-2 rounded-[var(--radius-xs)] border border-[var(--color-rule)] line-clamp-2">
+                        🎯 "${ogr.hedef}"
+                      </div>
+                    ` : ''}
+
+                    <!-- İlerleme Çubuğu -->
+                    <div class="space-y-1">
+                      <div class="flex items-center justify-between text-[11px]">
+                        <span class="text-[var(--color-ink-muted)] font-medium">Müfredat İlerlemesi</span>
+                        <span class="font-mono font-bold text-[var(--color-ink)]">${tamamKonular}/${totalKonular} Konu (%${ilerlemePct})</span>
+                      </div>
+                      <div class="w-full h-1.5 bg-[var(--color-paper-3)] rounded-full overflow-hidden border border-[var(--color-rule)]">
+                        <div class="h-full bg-[var(--color-accent)] rounded-full transition-all" style="width: ${ilerlemePct}%"></div>
+                      </div>
+                    </div>
+
+                    <!-- Görev Rozetleri -->
+                    <div class="flex items-center gap-2 pt-1 text-[11px]">
+                      <span class="meta-pill bg-[var(--color-paper-3)] text-[var(--color-ink)] border-[var(--color-rule)] font-mono">
+                        ${aktifGorevCount} Aktif Görev
+                      </span>
+                      ${gecikmisGorevCount > 0 ? `
+                        <span class="meta-pill bg-[var(--color-danger-bg)] text-[var(--color-danger)] border-[var(--color-danger-border)] font-mono font-bold">
+                          ${gecikmisGorevCount} Gecikmiş
+                        </span>
+                      ` : `
+                        <span class="meta-pill bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success-border)] font-mono">
+                          0 Gecikme
+                        </span>
+                      `}
+                    </div>
+                  </div>
+
+                  <!-- Alt İşlem Butonları -->
+                  <div class="pt-3 border-t border-[var(--color-rule)] flex items-center justify-between gap-2">
+                    <div>
+                      ${isAktif ? `
+                        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-[var(--radius-xs)] text-[11px] font-semibold bg-[var(--color-success-bg)] text-[var(--color-success)] border border-[var(--color-success-border)]">
+                          <i data-lucide="check" class="w-3.5 h-3.5"></i>Aktif Öğrenci
+                        </span>
+                      ` : `
+                        <button onclick="Store.setAktifOgrenci('${ogr.id}'); App.updateGlobalBadges(); App.populateStudentDropdown(); App.renderStudents(); App.showToast('${ogr.ad} ${ogr.soyad} aktif öğrenci olarak seçildi');" class="btn-tactile btn-tactile-ghost text-xs py-1 px-2.5">
+                          <span>Aktif Yap</span>
+                        </button>
+                      `}
+                    </div>
+
+                    <div class="flex items-center gap-1">
+                      <button onclick="App.openOgrenciModal('${ogr.id}')" class="p-1.5 rounded-[var(--radius-xs)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-3)] transition-colors" title="Öğrenciyi Düzenle">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <button onclick="App.openConfirmModal('Öğrenciyi Sil', '${ogr.ad} ${ogr.soyad} ve ilişkili tüm ödev, takip ve hata verileri kalıcı olarak silinecektir. Onaylıyor musunuz?', () => { Store.deleteOgrenci('${ogr.id}'); App.populateStudentDropdown(); App.updateGlobalBadges(); App.renderStudents(); App.showToast('Öğrenci silindi'); });" class="p-1.5 rounded-[var(--radius-xs)] text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors" title="Öğrenciyi Sil">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `}
+      </div>
+    `;
+
+    container.innerHTML = html;
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  },
+
+  openExcelIceAktarModal() {
+    const html = `
+      <div class="space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-rule)]">
+          <div>
+            <h3 class="font-display font-bold text-base text-[var(--color-ink)]">Excel ile Toplu Öğrenci Aktarımı</h3>
+            <p class="text-xs text-[var(--color-ink-muted)]">Excel dosyanızdaki öğrencileri sisteme otomatik olarak dahil edin.</p>
+          </div>
+          <button onclick="App.closeModal()" class="text-[var(--color-ink-faint)] hover:text-[var(--color-ink)]">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div id="excel-modal-step1" class="space-y-4 text-xs">
+          <!-- Bilgilendirme ve Şablon Linki -->
+          <div class="p-3.5 bg-[var(--color-paper-3)] rounded-[var(--radius-md)] border border-[var(--color-rule)] flex items-center justify-between">
+            <div class="flex items-center gap-2 text-[var(--color-ink)]">
+              <i data-lucide="info" class="w-4 h-4 text-[var(--color-accent)] shrink-0"></i>
+              <span>Dosyanızın formatı şablonla uyumlu olmalıdır.</span>
+            </div>
+            <button onclick="ExcelEngine.sablonIndir()" class="btn-tactile btn-tactile-ghost text-xs py-1 px-2.5 text-[var(--color-accent)]">
+              <i data-lucide="download" class="w-3 h-3"></i>
+              <span>Şablonu İndir</span>
+            </button>
+          </div>
+
+          <!-- Dosya Seçim Alanı -->
+          <div class="border-2 border-dashed border-[var(--color-rule-strong)] hover:border-[var(--color-accent)] rounded-[var(--radius-lg)] p-8 text-center space-y-2 transition-colors cursor-pointer bg-[var(--color-paper-1)]" onclick="document.getElementById('excel-file-input').click()">
+            <i data-lucide="file-spreadsheet" class="w-10 h-10 text-[var(--color-accent)] mx-auto"></i>
+            <div class="font-display font-bold text-sm text-[var(--color-ink)]">Excel dosyasını buraya bırakın veya seçin</div>
+            <div class="text-[11px] text-[var(--color-ink-muted)]">.xlsx veya .xls formatları desteklenmektedir</div>
+            <input type="file" id="excel-file-input" accept=".xlsx, .xls" class="hidden" onchange="App.onExcelFileChosen(event)">
+          </div>
+        </div>
+
+        <div id="excel-modal-step2" class="hidden space-y-4 text-xs">
+          <!-- Sonuç Alanı Dinamik Dolar -->
+        </div>
+      </div>
+    `;
+
+    this.openModal(html);
+  },
+
+  onExcelFileChosen(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const step1 = document.getElementById('excel-modal-step1');
+    const step2 = document.getElementById('excel-modal-step2');
+    if (!step2) return;
+
+    if (step1) step1.classList.add('hidden');
+    step2.classList.remove('hidden');
+
+    step2.innerHTML = `
+      <div class="p-8 text-center text-xs text-[var(--color-ink-muted)] space-y-2">
+        <i data-lucide="loader-2" class="w-6 h-6 animate-spin mx-auto text-[var(--color-accent)]"></i>
+        <p>Excel dosyası doğrulanıyor ve analiz ediliyor...</p>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+
+    ExcelEngine.ogrenciIceAktar(file, (sonuc) => {
+      const basarili = sonuc.basarili || [];
+      const hatali = sonuc.hatali || [];
+
+      let contentHtml = `
+        <div class="space-y-3.5 text-xs">
+          <div class="flex items-center gap-2 p-3 bg-[var(--color-success-bg)] border border-[var(--color-success-border)] rounded-[var(--radius-md)] text-[var(--color-success)] font-semibold">
+            <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i>
+            <span>${basarili.length} öğrenci aktarıma hazır</span>
+          </div>
+      `;
+
+      if (hatali.length > 0) {
+        contentHtml += `
+          <div class="space-y-2 p-3 bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] rounded-[var(--radius-md)] text-[var(--color-danger)]">
+            <div class="font-bold flex items-center gap-1.5">
+              <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0"></i>
+              <span>${hatali.length} satırda geçersiz veri tespit edildi (bu satırlar atlanacaktır):</span>
+            </div>
+            <div class="max-h-36 overflow-y-auto space-y-1 font-mono text-[11px] pr-1">
+              ${hatali.map(h => `<div>• Satır ${h.satir}: ${h.sebep}</div>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      contentHtml += `
+          <div class="flex items-center justify-between pt-3 border-t border-[var(--color-rule)]">
+            <button type="button" onclick="App.openExcelIceAktarModal()" class="btn-tactile btn-tactile-ghost text-xs">Farklı Dosya Seç</button>
+            <button type="button" ${basarili.length === 0 ? 'disabled' : ''} onclick="App.saveExcelStudents('${encodeURIComponent(JSON.stringify(basarili))}')" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-4">
+              ${basarili.length} Öğrenciyi Sisteme Kaydet
+            </button>
+          </div>
+        </div>
+      `;
+
+      step2.innerHTML = contentHtml;
+      if (window.lucide) lucide.createIcons();
+    });
+  },
+
+  saveExcelStudents(encodedData) {
+    try {
+      const basarili = JSON.parse(decodeURIComponent(encodedData));
+      if (!Array.isArray(basarili) || basarili.length === 0) {
+        this.showToast('Aktarılacak geçerli öğrenci bulunamadı.');
+        return;
+      }
+
+      basarili.forEach(item => {
+        Store.addOgrenci(item.veri);
+      });
+
+      this.closeModal();
+      this.populateStudentDropdown();
+      this.updateGlobalBadges();
+      this.renderStudents();
+      this.showToast(`${basarili.length} öğrenci başarıyla sisteme kaydedildi!`);
+    } catch (err) {
+      console.error('Excel öğrencileri kaydedilirken hata:', err);
+      this.showToast('Öğrenciler kaydedilirken bir hata oluştu.');
+    }
   },
 
   // ─────────────────────────────────────────────────────────────

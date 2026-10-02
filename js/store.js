@@ -23,7 +23,10 @@ const Store = {
     ogrenciKonuDurumlari: [],
     hataKayitlari: [],
     sinifNotlari: [],
-    calismaKayitlari: []
+    calismaKayitlari: [],
+    dersler: [],
+    konular: [],
+    kaynaklar: []
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -42,6 +45,16 @@ const Store = {
     } catch (err) {
       console.error('Store verisi yüklenirken hata oluştu:', err);
       this.data = this.getSeedData();
+      this.save();
+    }
+
+    if (!Array.isArray(this.data.dersler) || this.data.dersler.length === 0) {
+      this.data.dersler = this.getSeedDersler();
+      this.save();
+    }
+
+    if (!Array.isArray(this.data.konular) || this.data.konular.length === 0) {
+      this.data.konular = this.getSeedKonular();
       this.save();
     }
 
@@ -80,8 +93,24 @@ const Store = {
       hataKayitlari: [],
       sinifNotlari: [],
       calismaKayitlari: [],
+      dersler: this.getSeedDersler(),
+      konular: this.getSeedKonular(),
       kaynaklar: this.getDefaultKaynaklar()
     };
+  },
+
+  getSeedDersler() {
+    return (typeof DERSLER !== 'undefined' && Array.isArray(DERSLER)) ? JSON.parse(JSON.stringify(DERSLER)) : [];
+  },
+
+  getSeedKonular() {
+    return (typeof KONULAR !== 'undefined' && Array.isArray(KONULAR)) ? JSON.parse(JSON.stringify(KONULAR)) : [];
+  },
+
+  resetCurriculum() {
+    this.data.dersler = this.getSeedDersler();
+    this.data.konular = this.getSeedKonular();
+    this.save();
   },
 
   resetToFactory() {
@@ -91,13 +120,13 @@ const Store = {
 
   getDefaultKaynaklar() {
     return [
-      { id: 'kyn-1', ad: 'Kazanım Soru Bankası', yayinevi: 'MEB', dersId: '' },
-      { id: 'kyn-2', ad: 'Soru Bankası', yayinevi: 'Bilgi Sarmal', dersId: '' },
-      { id: 'kyn-3', ad: 'Hız Soru Bankası', yayinevi: 'Hız Yayınları', dersId: '' },
-      { id: 'kyn-4', ad: 'Elit Soru Dünyası', yayinevi: 'Limit Yayınları', dersId: '' },
-      { id: 'kyn-5', ad: 'Yeni Nesil Master', yayinevi: 'Okyanus Yayınları', dersId: '' },
-      { id: 'kyn-6', ad: 'Fasikül Soru Bankası', yayinevi: 'Apotemi', dersId: '' },
-      { id: 'kyn-7', ad: 'Simülasyon Denemeleri', yayinevi: '3D Yayınları', dersId: '' }
+      { id: 'kyn-1', ad: 'Kazanım Soru Bankası', yayinevi: 'MEB', modulId: ['ara-sinif', 'lgs', 'yks'], tur: 'Soru Bankası', zorluk: 3, aciklama: 'Temel düzey MEB kazanım testleri' },
+      { id: 'kyn-2', ad: 'Soru Bankası', yayinevi: 'Bilgi Sarmal', modulId: ['yks'], tur: 'Soru Bankası', zorluk: 4, aciklama: 'ÖSYM tarzı orta-ileri seviye sorular' },
+      { id: 'kyn-3', ad: 'Hız Soru Bankası', yayinevi: 'Hız Yayınları', modulId: ['ara-sinif', 'lgs'], tur: 'Soru Bankası', zorluk: 3, aciklama: 'Yeni nesil beceri temelli sorular' },
+      { id: 'kyn-4', ad: 'Elit Soru Dünyası', yayinevi: 'Limit Yayınları', modulId: ['yks'], tur: 'Soru Bankası', zorluk: 4, aciklama: 'Kapsamlı soru arşivi' },
+      { id: 'kyn-5', ad: 'Yeni Nesil Master', yayinevi: 'Okyanus Yayınları', modulId: ['lgs'], tur: 'Soru Bankası', zorluk: 5, aciklama: 'Zorlayıcı LGS analiz soruları' },
+      { id: 'kyn-6', ad: 'Fasikül Soru Bankası', yayinevi: 'Apotemi', modulId: ['yks'], tur: 'Fasikül', zorluk: 5, aciklama: 'Derinlemesine konu kavrama ve maraton' },
+      { id: 'kyn-7', ad: 'Simülasyon Denemeleri', yayinevi: '3D Yayınları', modulId: ['yks'], tur: 'Deneme', zorluk: 4, aciklama: 'Gerçek sınav provası denemeler' }
     ];
   },
 
@@ -116,10 +145,18 @@ const Store = {
 
   addKaynak(veri) {
     const id = 'kyn-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
+    const moduller = Array.isArray(veri.modulId)
+      ? veri.modulId
+      : (veri.modulId ? [veri.modulId] : ['yks']);
+
     const yeniKaynak = {
       id,
       ad: (veri.ad || 'Soru Bankası').trim(),
       yayinevi: (veri.yayinevi || 'Genel').trim(),
+      modulId: moduller,
+      tur: veri.tur || 'Soru Bankası',
+      zorluk: Math.max(1, Math.min(5, Number(veri.zorluk) || 3)),
+      aciklama: (veri.aciklama || '').trim(),
       dersId: veri.dersId || ''
     };
     if (!Array.isArray(this.data.kaynaklar)) {
@@ -128,6 +165,41 @@ const Store = {
     this.data.kaynaklar.push(yeniKaynak);
     this.save();
     return yeniKaynak;
+  },
+
+  updateKaynak(id, updates) {
+    const list = this.getKaynaklar();
+    const idx = list.findIndex(k => String(k.id) === String(id));
+    if (idx === -1) return null;
+
+    if (updates.modulId && !Array.isArray(updates.modulId)) {
+      updates.modulId = [updates.modulId];
+    }
+    const guncel = Object.assign({}, list[idx], updates);
+    this.data.kaynaklar[idx] = guncel;
+    this.save();
+    return guncel;
+  },
+
+  deleteKaynak(id) {
+    this.data.kaynaklar = (this.data.kaynaklar || []).filter(k => String(k.id) !== String(id));
+    // Cascade: o kaynağa bağlı görevlerdeki kaynakId alanını temizle
+    if (Array.isArray(this.data.gorevler)) {
+      this.data.gorevler.forEach(g => {
+        if (String(g.kaynakId) === String(id)) {
+          g.kaynakId = '';
+        }
+      });
+    }
+    this.save();
+  },
+
+  getKaynakCozulenSoruSayisi(kaynakId) {
+    if (!kaynakId) return 0;
+    const gorevler = this.data.gorevler || [];
+    return gorevler
+      .filter(g => String(g.kaynakId) === String(kaynakId))
+      .reduce((sum, g) => sum + (Number(g.cozulenSoru) || 0), 0);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -440,7 +512,7 @@ const Store = {
   },
 
   getKonuIstatistik(ogrenciId, dersId) {
-    const konular = typeof KONULAR !== 'undefined' ? KONULAR.filter(k => k.dersId === dersId) : [];
+    const konular = this.getKonularForDers(dersId);
     const toplam = konular.length;
     if (toplam === 0) {
       return { toplam: 0, islenmedi: 0, calisiliyor: 0, tamam: 0, tekrar_lazim: 0, yuzde: 0 };
@@ -618,36 +690,155 @@ const Store = {
   },
 
   // ─────────────────────────────────────────────────────────────
-  // MÜFREDAT VE MODEL YARDIMCILARI
+  // MÜFREDAT VE DERS METODLARI
   // ─────────────────────────────────────────────────────────────
-  getDerslerForOgrenci(ogrenci) {
-    if (!ogrenci) return [];
-    if (typeof DERSLER === 'undefined') return [];
+  getDersler() {
+    if (!Array.isArray(this.data.dersler) || this.data.dersler.length === 0) {
+      this.data.dersler = this.getSeedDersler();
+      this.save();
+    }
+    return this.data.dersler;
+  },
 
-    return DERSLER.filter(ders => {
-      if (ders.modulId !== ogrenci.modulId) return false;
-      return ders.sinif === String(ogrenci.sinif) || ders.sinif === 'ortak';
-    });
+  getDers(dersId) {
+    if (!dersId) return null;
+    return this.getDersler().find(d => String(d.id) === String(dersId)) || null;
+  },
+
+  addDers(veri) {
+    const id = veri.id || ('drs-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4));
+    const yeniDers = {
+      id,
+      modulId: veri.modulId || 'yks',
+      sinif: String(veri.sinif || 'ortak'),
+      ad: (veri.ad || 'Yeni Ders').trim(),
+      kisaltma: (veri.kisaltma || 'DRS').trim().toUpperCase().slice(0, 5),
+      renk: veri.renk || 'blue',
+      ikon: veri.ikon || 'book',
+      haftalikSaat: Number(veri.haftalikSaat) || 0,
+      sinavdaMi: Boolean(veri.sinavdaMi),
+      soruSayisi: Number(veri.soruSayisi) || 0
+    };
+    if (!Array.isArray(this.data.dersler)) {
+      this.data.dersler = this.getSeedDersler();
+    }
+    this.data.dersler.push(yeniDers);
+    this.save();
+    return yeniDers;
+  },
+
+  updateDers(id, updates) {
+    const list = this.getDersler();
+    const idx = list.findIndex(d => String(d.id) === String(id));
+    if (idx === -1) return null;
+
+    if (updates.kisaltma) {
+      updates.kisaltma = updates.kisaltma.trim().toUpperCase().slice(0, 5);
+    }
+    const guncel = Object.assign({}, list[idx], updates);
+    this.data.dersler[idx] = guncel;
+    this.save();
+    return guncel;
+  },
+
+  deleteDers(id) {
+    const targetId = String(id);
+    this.data.dersler = (this.data.dersler || []).filter(d => String(d.id) !== targetId);
+
+    // Cascade: o derse ait tüm konuları da siler
+    const silinecekKonular = (this.data.konular || []).filter(k => String(k.dersId) === targetId);
+    const silinecekKonuIds = new Set(silinecekKonular.map(k => String(k.id)));
+
+    this.data.konular = (this.data.konular || []).filter(k => String(k.dersId) !== targetId);
+
+    // Konu durumlarını temizle
+    if (Array.isArray(this.data.ogrenciKonuDurumlari)) {
+      this.data.ogrenciKonuDurumlari = this.data.ogrenciKonuDurumlari.filter(
+        kd => !silinecekKonuIds.has(String(kd.konuId))
+      );
+    }
+
+    this.save();
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // KONU METODLARI
+  // ─────────────────────────────────────────────────────────────
+  getKonular() {
+    if (!Array.isArray(this.data.konular) || this.data.konular.length === 0) {
+      this.data.konular = this.getSeedKonular();
+      this.save();
+    }
+    return this.data.konular;
+  },
+
+  getKonu(konuId) {
+    if (!konuId) return null;
+    return this.getKonular().find(k => String(k.id) === String(konuId)) || null;
   },
 
   getKonularForDers(dersId) {
-    if (!dersId || typeof KONULAR === 'undefined') return [];
-    return KONULAR.filter(k => k.dersId === dersId);
+    if (!dersId) return [];
+    return this.getKonular().filter(k => String(k.dersId) === String(dersId));
+  },
+
+  addKonu(veri) {
+    const id = veri.id || ('kon-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4));
+    const yeniKonu = {
+      id,
+      dersId: String(veri.dersId || ''),
+      modulId: veri.modulId || '',
+      sinif: String(veri.sinif || ''),
+      uniteNo: Number(veri.uniteNo) || 1,
+      uniteAdi: (veri.uniteAdi || 'Ünite 1').trim(),
+      konuAdi: (veri.konuAdi || 'Yeni Konu').trim(),
+      aciklama: (veri.aciklama || '').trim(),
+      siraNo: Number(veri.siraNo) || 1
+    };
+    if (!Array.isArray(this.data.konular)) {
+      this.data.konular = this.getSeedKonular();
+    }
+    this.data.konular.push(yeniKonu);
+    this.save();
+    return yeniKonu;
+  },
+
+  updateKonu(id, updates) {
+    const list = this.getKonular();
+    const idx = list.findIndex(k => String(k.id) === String(id));
+    if (idx === -1) return null;
+
+    const guncel = Object.assign({}, list[idx], updates);
+    this.data.konular[idx] = guncel;
+    this.save();
+    return guncel;
+  },
+
+  deleteKonu(id) {
+    const targetId = String(id);
+    this.data.konular = (this.data.konular || []).filter(k => String(k.id) !== targetId);
+
+    if (Array.isArray(this.data.ogrenciKonuDurumlari)) {
+      this.data.ogrenciKonuDurumlari = this.data.ogrenciKonuDurumlari.filter(
+        kd => String(kd.konuId) !== targetId
+      );
+    }
+    this.save();
+  },
+
+  getDerslerForOgrenci(ogrenci) {
+    if (!ogrenci) return [];
+    const dersler = this.getDersler();
+
+    return dersler.filter(ders => {
+      if (ders.modulId !== ogrenci.modulId) return false;
+      return ders.sinif === String(ogrenci.sinif) || ders.sinif === 'ortak' || !ders.sinif;
+    });
   },
 
   getModulForOgrenci(ogrenci) {
     if (!ogrenci || typeof MODULLER === 'undefined') return null;
     return MODULLER.find(m => m.id === ogrenci.modulId) || null;
-  },
-
-  getDers(dersId) {
-    if (!dersId || typeof DERSLER === 'undefined') return null;
-    return DERSLER.find(d => d.id === dersId) || null;
-  },
-
-  getKonu(konuId) {
-    if (!konuId || typeof KONULAR === 'undefined') return null;
-    return KONULAR.find(k => k.id === konuId) || null;
   }
 };
 
