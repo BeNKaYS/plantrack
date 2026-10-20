@@ -405,21 +405,360 @@ kbd {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   YAZDIRMA MOTORU (PrintEngine Stilleri)
+   YAZDIRMA MOTORU & A4 ŞABLON DÜZENLERİ (PrintEngine Stilleri)
 ───────────────────────────────────────────────────────────── */
+/* Ekran önizleme — yatay A4 oranı (297mm x 210mm) */
+.print-page-yatay {
+  width: 297mm;
+  height: 210mm;
+  min-height: 210mm;
+  max-height: 210mm;
+  background: #ffffff;
+  color: #0f172a;
+  margin: 0 auto;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 6mm 8mm;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* Ekran önizleme — dikey A4 oranı (210mm x 297mm) */
+.print-page-dikey {
+  width: 210mm;
+  min-height: 297mm;
+  background: #ffffff;
+  color: #0f172a;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 8mm 10mm;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.print-page-dikey.print-single-page {
+  height: 297mm;
+  max-height: 297mm;
+  overflow: hidden;
+}
+
+/* Önizleme container'ı (cizelge-preview-area) için */
+#cizelge-preview-area {
+  overflow-x: auto;   /* yatay scroll — ekranda taşmayı önler */
+  overflow-y: auto;
+  padding: 20px;
+  background: var(--color-paper-3);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-rule);
+}
+
+/* Zaman Bloklama Tıkla-Sürükle Seçim & Vurgulama */
+#zaman-grid-table {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#zaman-grid-table td[data-zaman-cell="true"] {
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.zaman-cell-selecting {
+  position: relative;
+  outline: 2px solid var(--zaman-sel-color, #2563eb) !important;
+  outline-offset: -2px;
+  background-color: var(--zaman-sel-bg, rgba(37, 99, 235, 0.22)) !important;
+  z-index: 2;
+  box-shadow: inset 0 0 0 1px var(--zaman-sel-color, #2563eb);
+}
+
+.zaman-cell-selecting-delete {
+  position: relative;
+  outline: 2px dashed #e11d48 !important;
+  outline-offset: -2px;
+  background-color: rgba(225, 29, 72, 0.22) !important;
+  z-index: 2;
+  box-shadow: inset 0 0 0 1px #e11d48;
+}
+
+.zaman-cell-selected-active {
+  position: relative;
+  outline: 2px solid #2563eb !important;
+  outline-offset: -2px;
+  background-color: rgba(37, 99, 235, 0.16) !important;
+  z-index: 2;
+  box-shadow: inset 0 0 0 1px #2563eb;
+}
+
+.zaman-faaliyet-card {
+  transition: all var(--dur-fast) var(--ease-out);
+  user-select: none;
+}
+.zaman-faaliyet-card:hover {
+  transform: translateY(-1px);
+}
+.zaman-faaliyet-card:active {
+  transform: translateY(0);
+}
+
+/* Print modunda ölçekleme & Çok Sayfalı Baskı */
+.print-page-break {
+  page-break-after: always !important;
+  break-after: page !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+}
+
+.print-page-break:last-child {
+  page-break-after: auto !important;
+  break-after: auto !important;
+}
+
+.print-avoid-break {
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+}
+
 @media print {
+  html, body {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
+    display: block !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
   body > *:not(#print-area) {
     display: none !important;
   }
   #print-area {
     display: block !important;
     position: static !important;
-    inset: auto !important;
-    background: #ffffff !important;
-    color: #111827 !important;
-    z-index: 9999;
     width: 100% !important;
+    height: auto !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
     margin: 0 !important;
     padding: 0 !important;
+    overflow: visible !important;
+  }
+  .print-page-yatay {
+    margin: 0 auto !important;
+    width: 100% !important;
+    height: 196mm !important;
+    min-height: 196mm !important;
+    max-height: 196mm !important;
+    padding: 2mm 3mm !important;
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    overflow: hidden !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .print-page-dikey {
+    margin: 0 auto !important;
+    width: 100% !important;
+    min-height: 281mm !important;
+    padding: 2mm 3mm !important;
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .print-page-dikey.print-single-page {
+    height: 281mm !important;
+    max-height: 281mm !important;
+    overflow: hidden !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  .print-page-dikey.print-multi-page {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    display: block !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
   }
 }
+
+/* Çizelge Sol Kenar Dikey Yazı */
+.cizelge-sol-kenar {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.52rem;
+  color: #64748b;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  padding: 4px 3px;
+  border-right: 1px solid #cbd5e1;
+}
+
+
+/* ── Zaman Bloklama: yeni uygulama ızgarası ───────────────────────── */
+.zaman-app {
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-rule);
+  border-radius: 14px;
+  padding: 14px 16px;
+  max-width: 1240px;
+  margin: 0 auto;
+  color: var(--color-ink);
+}
+.zaman-app-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.zaman-app-title { font-size: 15px; font-weight: 800; letter-spacing: -0.2px; }
+.zaman-app-sub { font-size: 11.5px; color: var(--color-ink-muted); margin-top: 2px; }
+.zaman-app-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.zaman-stat {
+  font-size: 10.5px;
+  color: var(--color-ink-muted);
+  background: var(--color-paper-3);
+  border: 1px solid var(--color-rule);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.zaman-stat b { color: var(--color-ink); }
+
+.zaman-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  background: var(--color-paper-3);
+  border: 1px solid var(--color-rule);
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+.zaman-legend-title {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--color-ink-faint);
+}
+.zaman-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--color-ink-muted); }
+.zaman-chip i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+
+.zaman-grid-wrap {
+  max-height: 62vh;
+  overflow: auto;
+  border: 1px solid var(--color-rule);
+  border-radius: 10px;
+}
+.zaman-grid { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; min-width: 860px; }
+.zaman-grid th, .zaman-grid td { border-right: 1px solid var(--color-rule); border-bottom: 1px solid var(--color-rule); }
+.zaman-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--color-paper-4);
+  padding: 6px 4px;
+  text-align: center;
+}
+.zaman-grid thead th.is-weekend { background: var(--color-paper-3); }
+.zaman-grid thead th.is-today { box-shadow: inset 0 -2px 0 var(--color-accent); }
+.zaman-corner { position: sticky; left: 0; z-index: 5; width: 86px; }
+.zaman-day { font-size: 11px; font-weight: 800; color: var(--color-ink); }
+.zaman-grid thead th.is-today .zaman-day { color: var(--color-accent); }
+.zaman-date { font-size: 9.5px; color: var(--color-ink-faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: 1px; }
+
+.zaman-time-col {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 86px;
+  background: var(--color-paper-2);
+  font-size: 10.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  color: var(--color-ink-muted);
+  text-align: center;
+  padding: 0 4px;
+}
+.zaman-grid tr.is-hour .zaman-time-col { background: var(--color-paper-3); color: var(--color-ink); border-bottom-color: var(--color-rule-strong); }
+.zaman-grid tbody tr.is-hour td { border-bottom-color: var(--color-rule-strong); }
+
+.zaman-cell { height: 28px; padding: 0; vertical-align: middle; overflow: hidden; cursor: pointer; }
+.zaman-cell-empty { text-align: center; background: transparent; }
+.zaman-cell.is-weekend.zaman-cell-empty { background: var(--color-paper-3); }
+.zaman-cell-empty .zaman-plus { opacity: 0; font-size: 13px; font-weight: 700; color: var(--color-ink-faint); transition: opacity .12s; }
+.zaman-cell-empty:hover { background: var(--color-paper-3); }
+.zaman-cell-empty:hover .zaman-plus { opacity: .7; }
+.zaman-cell-full { text-align: center; }
+.zaman-cell-inner { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 0 3px; line-height: 1.05; }
+.zaman-cell-label { font-size: 11px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.zaman-cell-note { font-size: 8.5px; font-style: italic; color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+.zaman-app-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: var(--color-ink-faint);
+}
+
+
+/* ── Konu & Soru: uygulama ızgarası ─────────────────────────── */
+.ks-app { background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: 14px; padding: 14px 16px; max-width: 1240px; margin: 0 auto; color: var(--color-ink); }
+.ks-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.ks-title { font-size: 15px; font-weight: 800; letter-spacing: -0.2px; }
+.ks-sub { font-size: 11.5px; color: var(--color-ink-muted); margin-top: 2px; }
+.ks-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.ks-stat { font-size: 10.5px; color: var(--color-ink-muted); background: var(--color-paper-3); border: 1px solid var(--color-rule); border-radius: 999px; padding: 3px 9px; }
+.ks-stat b { color: var(--color-ink); }
+.ks-empty { padding: 28px; text-align: center; font-size: 12px; color: var(--color-ink-muted); background: var(--color-paper-3); border: 1px dashed var(--color-rule-strong); border-radius: 10px; }
+.ks-grid-wrap { max-height: 64vh; overflow: auto; border: 1px solid var(--color-rule); border-radius: 10px; }
+.ks-grid { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+.ks-grid th, .ks-grid td { border-right: 1px solid var(--color-rule); border-bottom: 1px solid var(--color-rule); }
+.ks-grid thead tr:nth-child(1) th { position: sticky; top: 0; z-index: 3; height: 30px; font-size: 10.5px; font-weight: 800; text-align: center; border-bottom: 1px solid var(--color-rule-strong); }
+.ks-grid thead tr:nth-child(2) th { position: sticky; top: 30px; z-index: 3; height: 22px; font-size: 9.5px; font-weight: 700; text-align: center; border-bottom: 1px solid var(--color-rule-strong); }
+.ks-corner { left: 0; z-index: 6 !important; background: var(--color-paper-4); color: var(--color-ink-muted); }
+.ks-konu-head { left: 40px; z-index: 6 !important; background: var(--color-paper-4); color: var(--color-ink); text-align: left; padding: 0 8px; }
+.ks-sira { position: sticky; left: 0; z-index: 2; background: var(--color-paper-3); text-align: center; font-family: ui-monospace, Menlo, monospace; font-size: 10px; font-weight: 700; color: var(--color-ink-muted); }
+.ks-konu { position: sticky; left: 40px; z-index: 2; background: var(--color-paper-2); padding: 2px 8px; font-size: 11px; font-weight: 600; color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ks-grid tbody tr:hover .ks-sira, .ks-grid tbody tr:hover .ks-konu { background: var(--color-paper-3); }
+.ks-cell { height: 26px; padding: 0; text-align: center; background: transparent; }
+.ks-input { width: 100%; height: 26px; border: 0; background: transparent; text-align: center; font-size: 11px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; outline: none; }
+.ks-input.is-d { color: #16a34a; }
+.ks-input.is-y { color: #e11d48; }
+.ks-input.is-b { color: var(--color-ink-muted); }
+.ks-input.is-s { color: #2563eb; }
+.ks-input:focus { background: var(--color-paper-3); }
+.ks-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; font-size: 10.5px; color: var(--color-ink-faint); }

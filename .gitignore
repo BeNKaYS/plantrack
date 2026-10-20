@@ -1,3 +1,14 @@
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
 .DS_Store
+
+# Derleme çıktıları (yeniden üretilebilir)
+/Plantrack.app/
+/dist/
+/Plantrack.dmg
+/Plantrack.pkg
+*.dmg
+*.pkg
+
+# Yerel ajan/oturum verileri
+/.openchamber/

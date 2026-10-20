@@ -10,31 +10,48 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 
-  <!-- Tailwind CSS CDN + Config -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind CSS (Offline Local + Fallback) + Config -->
+  <script src="assets/vendor/tailwindcss.js"></script>
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
-            display: ['"Space Grotesk"', 'sans-serif'],
-            mono: ['"JetBrains Mono"', 'monospace'],
+    if (typeof tailwind === 'undefined') {
+      document.write('<script src="https://cdn.tailwindcss.com"><\/script>');
+    }
+  </script>
+  <script>
+    if (typeof tailwind !== 'undefined') {
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+              display: ['"Space Grotesk"', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'monospace'],
+            }
           }
         }
-      }
+      };
     }
   </script>
 
-  <!-- Lucide Icons CDN -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Lucide Icons (Offline Local + Fallback) -->
+  <script src="assets/vendor/lucide.min.js"></script>
+  <script>
+    if (typeof lucide === 'undefined') {
+      document.write('<script src="https://unpkg.com/lucide@latest"><\/script>');
+    }
+  </script>
 
-  <!-- SheetJS CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <!-- SheetJS (Offline Local + Fallback) -->
+  <script src="assets/vendor/xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"><\/script>');
+    }
+  </script>
 
   <!-- Hallmark Design System: tokens.css + style.css -->
-  <link rel="stylesheet" href="tokens.css">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="tokens.css?v=8.61">
+  <link rel="stylesheet" href="style.css?v=8.61">
 
   <!-- Dynamic Sidebar Width & Theme Initialization (Flicker-prevention script) -->
   <style id="sidebar-dynamic-width"></style>
@@ -103,7 +120,14 @@
         <div class="space-y-0.5">
           <button data-nav="matrix" class="nav-item">
             <div class="flex items-center gap-2.5">
-              <i data-lucide="calendar-days" class="w-4 h-4"></i>
+              <i data-lucide="layout-list" class="w-4 h-4"></i>
+              <span>Çalışma & Ödev Kartları</span>
+            </div>
+          </button>
+
+          <button data-nav="grid-matrix" class="nav-item">
+            <div class="flex items-center gap-2.5">
+              <i data-lucide="grid-3x3" class="w-4 h-4"></i>
               <span>Çalışma & Ödev Matrisi</span>
             </div>
           </button>
@@ -128,6 +152,14 @@
               <span>Raporlar</span>
             </div>
             <span class="meta-pill">A4 Karne</span>
+          </button>
+
+          <button data-nav="deneme-raporu" class="nav-item">
+            <div class="flex items-center gap-2.5">
+              <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+              <span>Deneme Raporu</span>
+            </div>
+            <span class="meta-pill">Excel & Analiz</span>
           </button>
 
           <button data-nav="hata-defteri" class="nav-item">
@@ -200,6 +232,7 @@
           <span class="text-[10px] font-mono text-[var(--color-ink-faint)]">Yerel Depolama</span>
         </div>
         <div class="flex items-center gap-1">
+          <div id="sidebar-mcp-status"></div>
           <button id="btn-sidebar-import-json" class="p-1 rounded-[var(--radius-xs)] text-[var(--color-ink-faint)] hover:text-[var(--color-ink)] hover:bg-[var(--color-paper-4)] transition-colors cursor-pointer" title="JSON Yedek Yükle">
             <i data-lucide="upload" class="w-3.5 h-3.5"></i>
           </button>
@@ -241,16 +274,12 @@
         <span id="active-student-badge" class="hidden meta-pill text-[var(--color-accent)] bg-[var(--color-accent-subtle)] border-[var(--color-accent-border)] font-medium"></span>
       </div>
 
-      <!-- Sağ Taraf: Gecikme Uyarısı & Hızlı Yeni Görev Butonu -->
-      <div class="flex items-center gap-3">
+      <!-- Sağ Taraf: MCP Canlı Senkronizasyon & Gecikme Uyarısı -->
+      <div class="flex items-center gap-2.5">
+        <div id="topbar-mcp-badge-container" class="flex items-center"></div>
         <button id="topbar-overdue-alert" class="hidden flex items-center gap-2 px-2.5 py-1 rounded-[var(--radius-sm)] bg-[var(--color-danger-bg)] text-[var(--color-danger)] border border-[var(--color-danger-border)] hover:opacity-90 text-xs font-medium transition-all cursor-pointer" title="Geciken Ödevler">
           <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
           <span><span id="topbar-overdue-count">0</span> Geciken Ödev</span>
-        </button>
-
-        <button id="btn-quick-new-task" onclick="App.openTaskModal()" class="btn-tactile btn-tactile-primary">
-          <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-          <span>Hızlı Ödev Ekle</span>
         </button>
       </div>
     </header>
@@ -260,8 +289,10 @@
       <section id="view-overview" class="view-section w-full h-full overflow-y-auto"></section>
       <section id="view-cockpit" class="view-section hidden w-full h-full overflow-y-auto"></section>
       <section id="view-matrix" class="view-section hidden w-full h-full overflow-y-auto"></section>
+      <section id="view-grid-matrix" class="view-section hidden w-full h-full overflow-y-auto"></section>
       <section id="view-tasks" class="view-section hidden w-full h-full overflow-y-auto"></section>
       <section id="view-report" class="view-section hidden w-full h-full overflow-y-auto"></section>
+      <section id="view-deneme-raporu" class="view-section hidden w-full h-full overflow-y-auto"></section>
       <section id="view-hata-defteri" class="view-section hidden w-full h-full overflow-y-auto"></section>
       <section id="view-cizelge-robotu" class="view-section hidden w-full h-full overflow-y-auto"></section>
       <section id="view-curriculum-pool" class="view-section hidden w-full h-full overflow-y-auto"></section>
@@ -304,14 +335,15 @@
 
   <!-- Gizli Dosya Yükleme Inputu -->
   <input type="file" id="input-import-json" class="hidden" accept=".json">
+  <input type="file" id="input-import-deneme" class="hidden" accept=".xlsx,.xls,.csv">
 
   <!-- Yazdırma Alanı & Dinamik Sayfa Stili (PrintEngine) -->
   <div id="print-area" class="hidden"></div>
   <style id="print-page-style"></style>
 
   <!-- Script Yükleme Sırası: data.js -> store.js -> app.js -->
-  <script src="js/data.js?v=7.1"></script>
-  <script src="js/store.js?v=7.1"></script>
-  <script src="app.js?v=7.1"></script>
+  <script src="js/data.js?v=8.61"></script>
+  <script src="js/store.js?v=8.61"></script>
+  <script src="app.js?v=8.61"></script>
 </body>
 </html>
