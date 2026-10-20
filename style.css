@@ -762,3 +762,30 @@ kbd {
 .ks-input.is-s { color: #2563eb; }
 .ks-input:focus { background: var(--color-paper-3); }
 .ks-foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; font-size: 10.5px; color: var(--color-ink-faint); }
+
+/* ── A4 Koç Raporu sayfaları (sabit yükseklik yok, boşluk dağıtımı yok) ── */
+.koc-rapor-sayfa {
+  width: 100%;
+  box-sizing: border-box;
+  background: #ffffff;
+  color: #0f172a;
+  display: flex;
+  flex-direction: column;
+}
+.koc-rapor-sayfa .koc-alt { margin-top: auto; padding-top: 8px; }
+
+@media print {
+  .koc-rapor-sayfa {
+    min-height: 274mm;
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .koc-rapor-sayfa.son-sayfa {
+    page-break-after: auto;
+    break-after: auto;
+  }
+}

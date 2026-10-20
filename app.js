@@ -5463,10 +5463,20 @@ const App = {
     const ilkNet = netOf(kronolojik[0]);
     const toplamGelisim = sonNet - ilkNet;
 
+    // Ders adı eşleştirme (Fen ve Teknoloji → Fen Bilimleri, Sosyal Bilgiler → T.C. İnkılap ...)
+    const kanonikDers = (ad) => {
+      const ham = String(ad || '').trim();
+      try {
+        const m = Store.findMatchingDers(ham, ogr);
+        if (m && m.ad) return m.ad;
+      } catch (_) {}
+      return ham;
+    };
+
     // Ders bazlı kümülatif özet
     const dMap = new Map();
     kronolojik.forEach(snv => (snv.dersler || []).forEach(d => {
-      const key = (d.ders || '').trim();
+      const key = kanonikDers(d.ders);
       if (!key) return;
       if (!dMap.has(key)) dMap.set(key, { ders: key, soru: 0, dogru: 0, yanlis: 0, bos: 0, net: 0, adet: 0, kurum: 0, sinav: 0 });
       const it = dMap.get(key);
@@ -5492,8 +5502,9 @@ const App = {
       .replace(/ş/g, 's').replace(/ö/g, 'o').replace(/ç/g, 'c').replace(/[^a-z0-9]/g, '');
     const kMap = new Map();
     kronolojik.forEach(snv => (snv.konular || []).forEach(k => {
-      const key = `${normStr(k.ders)}__${normStr(k.konuAdi)}`;
-      if (!kMap.has(key)) kMap.set(key, { ders: k.ders, konuAdi: k.konuAdi, soru: 0, d: 0, y: 0, denemeSet: new Set() });
+      const dersAd = kanonikDers(k.ders);
+      const key = `${normStr(dersAd)}__${normStr(k.konuAdi)}`;
+      if (!kMap.has(key)) kMap.set(key, { ders: dersAd, konuAdi: k.konuAdi, soru: 0, d: 0, y: 0, denemeSet: new Set() });
       const it = kMap.get(key);
       it.soru += Number(k.soruSayisi || 0);
       it.d += Number(k.dogru || 0);
@@ -5512,7 +5523,9 @@ const App = {
     const svgTrend = () => {
       const W = 760, H = 215, padL = 38, padR = 16, padT = 16, padB = 38;
       const vals = kronolojik.map(netOf);
-      const maxV = Math.max(10, Math.ceil(Math.max(...vals, 1) / 10) * 10 + 5);
+      const enBuyuk = Math.max(...vals, 1);
+      const adim = enBuyuk <= 20 ? 5 : enBuyuk <= 50 ? 10 : enBuyuk <= 120 ? 20 : 50;
+      const maxV = Math.max(adim * 4, Math.ceil(enBuyuk / (adim * 4)) * (adim * 4));
       const dx = vals.length > 1 ? (W - padL - padR) / (vals.length - 1) : 0;
       const X = i => vals.length > 1 ? padL + i * dx : (W + padL - padR) / 2;
       const Y = v => H - padB - (v / maxV) * (H - padT - padB);
@@ -5601,7 +5614,7 @@ const App = {
       </div>`;
 
     const sayfa1 = `
-      <div class="print-page-dikey print-single-page print-page-break bg-white text-slate-900" style="box-sizing:border-box;">
+      <div class="koc-rapor-sayfa bg-white text-slate-900">
         ${ustBilgi}
         <div style="display:flex; gap:7px; margin-bottom:10px;">
           ${statBox('Deneme', String(n), 'girilen sınav', '#0f172a')}
@@ -5616,7 +5629,7 @@ const App = {
 
         <div style="font-size:10px; font-weight:800; color:#0f172a; margin:10px 0 2px;">2) DERS BAZLI ORTALAMA NET</div>
         <div style="border:1px solid #e2e8f0; border-radius:5px; padding:4px 6px; background:#ffffff;">${svgDers()}</div>
-        ${altBilgi}
+        <div class="koc-alt">${altBilgi}</div>
       </div>`;
 
     const denemeSatirlari = [...kronolojik].reverse().map((snv, i) => `
@@ -5641,7 +5654,7 @@ const App = {
       </tr>`).join('');
 
     const sayfa2 = `
-      <div class="print-page-dikey print-page-break bg-white text-slate-900" style="box-sizing:border-box; min-height:297mm;">
+      <div class="koc-rapor-sayfa bg-white text-slate-900">
         ${ustBilgi}
         <div style="font-size:10px; font-weight:800; color:#0f172a; margin-bottom:3px;">3) DENEME GEÇMİŞİ (${n})</div>
         <table style="width:100%; border-collapse:collapse; margin-bottom:10px;">
@@ -5669,7 +5682,7 @@ const App = {
           </tr></thead>
           <tbody>${dersSatirlari}</tbody>
         </table>
-        ${altBilgi}
+        <div class="koc-alt">${altBilgi}</div>
       </div>`;
 
     const konuSatirlari = konular.slice(0, 45).map(k => `
@@ -5690,7 +5703,7 @@ const App = {
       </div>`;
 
     const sayfa3 = `
-      <div class="print-page-dikey bg-white text-slate-900" style="box-sizing:border-box; min-height:297mm;">
+      <div class="koc-rapor-sayfa son-sayfa bg-white text-slate-900">
         ${ustBilgi}
 
         <div style="font-size:10px; font-weight:800; color:#0f172a; margin-bottom:2px;">5) EN ÇOK ZORLANILAN KONULAR — BAŞARI %</div>
@@ -5726,10 +5739,10 @@ const App = {
           <span>Veli İmzası: ______________________</span>
           <span>Koç İmzası: ______________________</span>
         </div>
-        ${altBilgi}
+        <div class="koc-alt">${altBilgi}</div>
       </div>`;
 
-    PrintEngine.yazdir(sayfa1 + sayfa2 + sayfa3, { yatay: false, baslik: `Deneme Koc Raporu - ${ogr.adSoyad || ''}` });
+    this.yazdirPdf(sayfa1 + sayfa2 + sayfa3, `Deneme Koc Raporu - ${ogr.adSoyad || ''}`, false);
   },
 
   renderDenemeRaporu() {
@@ -11267,6 +11280,47 @@ const App = {
     };
   },
 
+  // Raporu Chrome (headless) ile PDF olarak üretir; olmazsa yazdırma penceresine düşer
+  async yazdirPdf(html, baslik, yatay = false) {
+    const fallback = () => {
+      if (typeof PrintEngine !== 'undefined' && PrintEngine.yazdir) PrintEngine.yazdir(html, { yatay, baslik });
+      else window.print();
+    };
+    try {
+      const stiller = Array.from(document.querySelectorAll('style')).map(el => el.textContent || '').join('\n');
+      const baglantilar = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+        .map(el => el.href).filter(Boolean).map(h => `<link rel="stylesheet" href="${h}">`).join('');
+      const tamBelge = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>${baslik}</title>
+${baglantilar}
+<style>${stiller}
+@page { size: A4 ${yatay ? 'landscape' : 'portrait'}; margin: ${yatay ? '6mm 8mm' : '7mm 9mm'}; }
+html, body { margin: 0; padding: 0; background: #ffffff; }
+.text-slate-900 { color: #0f172a; }
+.bg-white { background: #ffffff; }
+.font-sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.leading-normal { line-height: 1.5; }
+</style></head><body><div id="print-area">${html}</div></body></html>`;
+
+      const res = await fetch('http://127.0.0.1:38888/api/print/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: tamBelge, baslik, yatay })
+      });
+      const j = await res.json();
+      if (j && j.success) {
+        this.showToast('PDF hazırlandı: ' + String(j.path || '').split('/').pop());
+        return true;
+      }
+      this.showToast('PDF üretilemedi — yazdırma penceresi açılıyor.');
+      fallback();
+      return false;
+    } catch (_) {
+      this.showToast('PDF üretilemedi — yazdırma penceresi açılıyor.');
+      fallback();
+      return false;
+    }
+  },
+
   printCizelge() {
     if (this._isPrintingCizelge) return;
     this._isPrintingCizelge = true;
@@ -11323,50 +11377,8 @@ const App = {
     const safeName = ogr ? `${ogr.ad}_${ogr.soyad}`.replace(/\s+/g, '_') : 'Sablon';
     const baslik = `Cizelge_${this.cizelgeAktifSablon}_${safeName}`;
 
-    this.showToast('Rapor hazırlanıyor (PDF)...');
-
-    const fallbackYazdir = () => {
-      if (typeof PrintEngine !== 'undefined' && PrintEngine.yazdir) {
-        PrintEngine.yazdir(html, { yatay, baslik });
-      } else {
-        window.print();
-      }
-    };
-
-    try {
-      const stiller = Array.from(document.querySelectorAll('style')).map(el => el.textContent || '').join('\n');
-      const baglantilar = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
-        .map(el => el.href).filter(Boolean)
-        .map(h => `<link rel="stylesheet" href="${h}">`).join('');
-      const tamBelge = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>${baslik}</title>
-${baglantilar}
-<style>${stiller}
-@page { size: A4 ${yatay ? 'landscape' : 'portrait'}; margin: ${yatay ? '6mm 8mm' : '7mm 9mm'}; }
-html, body { margin: 0; padding: 0; background: #ffffff; }
-.text-slate-900 { color: #0f172a; }
-.bg-white { background: #ffffff; }
-.font-sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-.leading-normal { line-height: 1.5; }
-</style></head><body><div id="print-area">${html}</div></body></html>`;
-
-      fetch('http://127.0.0.1:38888/api/print/pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ html: tamBelge, baslik, yatay })
-      }).then(r => r.json()).then(j => {
-        if (j && j.success) {
-          this.showToast('PDF hazırlandı ve açıldı: ' + String(j.path || '').split('/').pop());
-        } else {
-          this.showToast('PDF üretilemedi — yazdırma penceresi açılıyor.');
-          fallbackYazdir();
-        }
-      }).catch(() => {
-        this.showToast('PDF üretilemedi — yazdırma penceresi açılıyor.');
-        fallbackYazdir();
-      });
-    } catch (_) {
-      fallbackYazdir();
-    }
+    this.showToast('Rapor hazırlanıyor...');
+    this.yazdirPdf(html, baslik, yatay);
   },
 
   renderCizelgeRobotu() {
