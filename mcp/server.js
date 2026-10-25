@@ -569,12 +569,16 @@ const syncServer = http.createServer((req, res) => {
         const kaynakVersionJson = readJsonSafe(path.join(source, 'version.json')) || {};
         const kaynakSurum = kaynakVersionJson.surum || '';
         const karsilastirma = kaynakSurum ? surumKarsilastir(mevcutSurum.surum, kaynakSurum) : 0;
+        // karsilastirma > 0 → kaynak daha ESKİ. Eski sürümü yazmak geri gidiştir;
+        // yalnızca kullanıcı açıkça isterse (payload.allowDowngrade) yapılır.
+        const gerileme = karsilastirma > 0;
         const surumOzet = {
           mevcut: mevcutSurum.surum,
           kaynak: kaynakSurum || mevcutSurum.surum,
           tarih: kaynakVersionJson.tarih || '',
           not: kaynakVersionJson.not || '',
           yeniSurumVar: karsilastirma < 0,
+          gerileme,
           farkTuru: kaynakSurum ? surumFarkTuru(mevcutSurum.surum, kaynakSurum) : ''
         };
 
@@ -585,9 +589,24 @@ const syncServer = http.createServer((req, res) => {
             success: true, dryRun: true, source,
             kaynakTipi, repo: cfgRepo, branch: cfgBranch,
             degisecek, mcpDegisecek,
-            guncel: degisecek.length === 0 && mcpDegisecek.length === 0 && karsilastirma >= 0,
+            guncel: !gerileme && (degisecek.length === 0 && mcpDegisecek.length === 0),
+            uyari: gerileme
+              ? `Kaynaktaki sürüm (v${surumOzet.kaynak}) kurulu sürümden (v${surumOzet.mevcut}) daha eski. Güncelleme yapılmaz.`
+              : '',
             surumOzet,
             surum: mevcutSurum
+          }));
+        }
+
+        // Geri gidiş koruması: bayat ayna/CDN eski sürüm döndürürse yazma.
+        if (gerileme && payload.allowDowngrade !== true) {
+          res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({
+            success: false,
+            gerileme: true,
+            error: `Kaynaktaki sürüm v${surumOzet.kaynak}, kurulu sürüm v${surumOzet.mevcut} — daha eski. ` +
+              'Geri gidiş engellendi. Kaynağı güncelleyin (yerel klasörde version.json veya GitHub dalı).',
+            surumOzet
           }));
         }
 

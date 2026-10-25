@@ -85,6 +85,7 @@ Public depo için token gerekmez.
 ```
 kontrol (dryRun)
   → sürüm karşılaştırma (mevcut vs kaynak)
+  → GERİ GİDİŞ KORUMASI: kaynak sürüm daha eskiyse durdur (409)
   → değişecek dosya listesi
   → [onay: büyük sürümse]
   → yedek (web + mcp, jYedek/<etiket>_<zaman>/)
@@ -93,6 +94,17 @@ kontrol (dryRun)
   → başarısızsa: yedeği geri yaz, hata döndür
   → başarılıysa: sürüm bilgisini güncelle, arayüzü yenile
 ```
+
+### Geri gidiş koruması
+
+Kaynaktaki `version.json` kurulu sürümden **küçükse** güncelleme yapılmaz:
+
+- Kontrol ekranı: "Kaynaktaki sürüm v8.61, kurulu sürümden (v9.1) daha eski" uyarısı
+- Uygulama isteği: `HTTP 409` + `gerileme: true`, hiçbir dosya yazılmaz
+
+Bu koruma, bayat CDN/ayna veya yanlış klasör seçimi yüzünden eski kodun
+kurulmasını engeller. Bilinçli geri dönüş gerekirse istek gövdesine
+`"allowDowngrade": true` eklenmelidir (arayüzde düğmesi yok, elle yapılır).
 
 Veri tabanı (`~/PlantrackMCP/data/plantrack_db.json`) güncelleme kapsamına
 **girmez**; kullanıcı verisi korunur.

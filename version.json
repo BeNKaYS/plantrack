@@ -1,5 +1,5 @@
 {
-  "surum": "9.0",
+  "surum": "9.1",
   "tarih": "2026-10-25",
-  "not": "MCP veri bekçisi: referans doğrulama, bozuk veride yedekten kurtarma, çakışma kilidi, çizelge anahtar uyumu. Güncelleme: yerel klasör + GitHub, sürüm farkı bildirimi ve geri alma."
+  "not": "Güncelleme güvenliği: kaynaktaki sürüm daha eskiyse geri gidiş engellenir; GitHub için git clone kaynağı, hedefli zip çıkarma."
 }

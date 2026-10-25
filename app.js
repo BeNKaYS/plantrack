@@ -14916,6 +14916,18 @@ Lütfen ayarı tamamlayıp "plantrack_overview" aracını çağırarak test et.`
       const j = await res.json();
       if (!j.success) { this.updateSetStatus(j.error || 'Kontrol başarısız oldu.', true); return; }
       const so = j.surumOzet || {};
+
+      // Kaynak daha eskiyse güncelleme teklif edilmez (bayat ayna/CDN koruması)
+      if (so.gerileme) {
+        this._sonKontrolSonucu = null;
+        this.updateSetStatus(
+          `Kaynaktaki sürüm v${so.kaynak}, kurulu sürümden (v${so.mevcut}) daha eski. Güncelleme yapılmaz. ` +
+          'Kaynağı güncelleyin' + (so.tarih ? ` (kaynak tarihi: ${so.tarih})` : '') + '.',
+          true
+        );
+        return;
+      }
+
       if (j.guncel) {
         this.updateSetStatus('Zaten güncel (v' + (so.mevcut || (j.surum && j.surum.surum) || '—') + '). Değişiklik yok.');
         return;
@@ -14983,8 +14995,24 @@ Lütfen ayarı tamamlayıp "plantrack_overview" aracını çağırarak test et.`
       return;
     }
 
-    // Büyük sürüm atlamasında kullanıcıdan onay al (veri/yapı değişebilir)
+    // Büyük sürüm atlamasında kullanıcıdan onay al (veri/yapı değişebilir).
+    // Geri gidiş (kaynak daha eski) ise onay sorulmaz; engellenir.
     const onceki = this._sonKontrolSonucu;
+    const kontrol = await fetch('http://127.0.0.1:38888/api/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({}, govde, { dryRun: true }))
+    }).then(r => r.json()).catch(() => null);
+
+    if (kontrol && kontrol.success && kontrol.surumOzet && kontrol.surumOzet.gerileme) {
+      const so = kontrol.surumOzet;
+      this.updateSetStatus(
+        `Kaynaktaki sürüm v${so.kaynak}, kurulu sürümden (v${so.mevcut}) daha eski. Güncelleme yapılmadı.`,
+        true
+      );
+      return;
+    }
+
     if (onceki && onceki.farkTuru === 'buyuk') {
       const onay = await this.confirmModal({
         baslik: 'Büyük Sürüm Güncellemesi',
