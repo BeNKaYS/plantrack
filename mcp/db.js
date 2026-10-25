@@ -7,6 +7,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const V = require('./validate');
+
+const AUTO_BACKUP_MS = 60 * 1000;   // en fazla dakikada bir otomatik yedek
+const AUTO_BACKUP_KEEP = 20;        // döngüsel yedek sayısı
 
 class PlantrackDB {
   constructor(customDbPath = null) {
@@ -32,32 +36,50 @@ class PlantrackDB {
     this.dbPath = dbPath;
     this.backupDir = backupDir;
     this.data = null;
+    this.structureWarnings = [];
+    this.recoveredFrom = '';
+    this.readOnly = false;
+    this.autoBackupLast = 0;
     this.init();
   }
 
   /**
    * Veritabanını başlat: mevcut dosyadan yükle ya da en son yedekten/varsayılandan üret.
+   *
+   * Bozuk JSON ASLA sessizce sıfırlanmaz:
+   *   1) Bozuk dosya .corrupt-<zaman> olarak saklanır (kanıt korunur)
+   *   2) Sırayla en yeni yedekler denenir
+   *   3) Hiçbiri açılamazsa salt-okunur moda geçilir; diske yazılmaz
    */
   init() {
+    this.structureWarnings = [];
     try {
       if (fs.existsSync(this.dbPath)) {
         const raw = fs.readFileSync(this.dbPath, 'utf8');
-        this.data = JSON.parse(raw);
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch (parseErr) {
+          return this.recoverFromCorruptFile(parseErr);
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          return this.recoverFromCorruptFile(new Error('Kök nesne bekleniyordu'));
+        }
+        this.data = parsed;
         this.ensureStructure();
+        this.migrateLegacyKeys();
         return;
       }
 
       // Dosya henüz yoksa yedek klasöründen en güncelini ara
-      if (fs.existsSync(this.backupDir)) {
-        const files = fs.readdirSync(this.backupDir).filter(f => f.endsWith('.json')).sort().reverse();
-        if (files.length > 0) {
-          const latestBackup = path.join(this.backupDir, files[0]);
-          const raw = fs.readFileSync(latestBackup, 'utf8');
-          this.data = JSON.parse(raw);
-          this.ensureStructure();
-          this.save();
-          return;
-        }
+      const restored = this.loadLatestBackup();
+      if (restored) {
+        this.data = restored;
+        this.ensureStructure();
+        this.migrateLegacyKeys();
+        process.stderr.write(`[DB INIT] Veri dosyası yok; yedekten geri yüklendi: ${this.recoveredFrom}\n`);
+        this.save();
+        return;
       }
 
       // Yedek de yoksa varsayılan boş şablon
@@ -66,28 +88,165 @@ class PlantrackDB {
     } catch (err) {
       process.stderr.write(`[DB INIT ERROR] ${err.message}\n`);
       this.data = this.getDefaultTemplate();
+      this.readOnly = true;
     }
+  }
+
+  /** Veri dosyası bozuk: kanıtı sakla, yedekten dön, olmazsa salt-okunur başla. */
+  recoverFromCorruptFile(parseErr) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const corruptPath = `${this.dbPath}.corrupt-${stamp}`;
+    try {
+      fs.copyFileSync(this.dbPath, corruptPath);
+      process.stderr.write(`[DB CORRUPT] ${parseErr.message} · bozuk kopya: ${corruptPath}\n`);
+    } catch (copyErr) {
+      process.stderr.write(`[DB CORRUPT] ${parseErr.message} · bozuk kopya alınamadı: ${copyErr.message}\n`);
+    }
+
+    const restored = this.loadLatestBackup();
+    if (restored) {
+      this.data = restored;
+      this.ensureStructure();
+      this.migrateLegacyKeys();
+      this.recoveredFrom = corruptPath;
+      process.stderr.write('[DB RECOVERY] Son geçerli yedekten geri yüklendi; bozuk dosya korundu.\n');
+      this.save();
+      return;
+    }
+
+    this.data = this.getDefaultTemplate();
+    this.readOnly = true;
+    this.recoveredFrom = corruptPath;
+    process.stderr.write('[DB RECOVERY] Geçerli yedek bulunamadı. SALT OKUNUR mod: diske yazılmayacak.\n');
+  }
+
+  /** Yedek klasöründeki en yeni açılabilir JSON dosyasını döndürür. */
+  loadLatestBackup() {
+    try {
+      if (!fs.existsSync(this.backupDir)) return null;
+      const files = fs.readdirSync(this.backupDir)
+        .filter(f => f.endsWith('.json') && !f.startsWith('.'))
+        .sort()
+        .reverse()
+        .slice(0, 20);
+      for (const file of files) {
+        const full = path.join(this.backupDir, file);
+        try {
+          const parsed = JSON.parse(fs.readFileSync(full, 'utf8'));
+          if (parsed && typeof parsed === 'object' && Array.isArray(parsed.ogrenciler)) {
+            this.recoveredFrom = full;
+            return parsed;
+          }
+        } catch (_) { /* bu yedek de bozuk, sıradakini dene */ }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /** Eski (uygulamayla uyuşmayan) anahtarları güncel formata çevirir. */
+  migrateLegacyKeys() {
+    let changed = false;
+    const d = this.data || {};
+
+    // 1) konuSoruKayitlari: ogr_konu_2026-09_1 → ogr_konu_2026-09_hf1
+    if (d.konuSoruKayitlari && typeof d.konuSoruKayitlari === 'object') {
+      Object.keys(d.konuSoruKayitlari).forEach(key => {
+        const legacy = key.match(/^(.+)_(\d{1,2})$/);
+        if (legacy && !/_hf\d+$/.test(key)) {
+          const yeni = `${legacy[1]}_hf${legacy[2]}`;
+          if (!d.konuSoruKayitlari[yeni]) d.konuSoruKayitlari[yeni] = d.konuSoruKayitlari[key];
+          delete d.konuSoruKayitlari[key];
+          changed = true;
+        }
+      });
+    }
+
+    // 2) aliskanlikAySonu: [ogr][yilAy][no] → ogr_al-X_yilAy
+    if (d.aliskanlikAySonu && typeof d.aliskanlikAySonu === 'object') {
+      Object.keys(d.aliskanlikAySonu).forEach(ogr => {
+        const months = d.aliskanlikAySonu[ogr];
+        if (!months || typeof months !== 'object' || Array.isArray(months)) return;
+        const chains = (d.aliskanlikZincirleri && d.aliskanlikZincirleri[ogr]) || [];
+        Object.keys(months).forEach(yilAy => {
+          const byHabit = months[yilAy];
+          if (!/^\d{4}-\d{2}$/.test(yilAy) || !byHabit || typeof byHabit !== 'object' || Array.isArray(byHabit)) return;
+          Object.keys(byHabit).forEach(no => {
+            const habitId = (chains[Number(no) - 1] && chains[Number(no) - 1].id) || `al-${no}`;
+            const key = V.keyAliskanlikAySonu(ogr, habitId, yilAy);
+            if (!d.aliskanlikAySonu[key]) {
+              const val = Object.assign({}, byHabit[no]);
+              if (val.gun === undefined && val.gunSayisi !== undefined) val.gun = Number(val.gunSayisi) || 0;
+              d.aliskanlikAySonu[key] = val;
+            }
+          });
+          changed = true;
+        });
+        delete d.aliskanlikAySonu[ogr];
+      });
+    }
+
+    // 3) aliskanlikNotlari: [ogr][yilAy] = metin → ogr_yilAy
+    if (d.aliskanlikNotlari && typeof d.aliskanlikNotlari === 'object') {
+      Object.keys(d.aliskanlikNotlari).forEach(ogr => {
+        const months = d.aliskanlikNotlari[ogr];
+        if (!months || typeof months !== 'object' || Array.isArray(months)) return;
+        Object.keys(months).forEach(yilAy => {
+          if (!/^\d{4}-\d{2}$/.test(yilAy)) return;
+          const key = V.keyAliskanlikNot(ogr, yilAy);
+          const val = months[yilAy];
+          if (typeof val === 'string' && !d.aliskanlikNotlari[key]) d.aliskanlikNotlari[key] = val;
+          changed = true;
+        });
+        delete d.aliskanlikNotlari[ogr];
+      });
+    }
+
+    if (changed) {
+      process.stderr.write('[DB MIGRATION] Eski anahtar biçimleri güncel formata çevrildi.\n');
+    }
+  }
+
+  /** Bütünlük raporu — salt okunur, veriyi değiştirmez. */
+  validateDatabase() {
+    return V.validateDatabase(this.data);
   }
 
   ensureStructure() {
     if (!this.data) this.data = {};
-    if (!Array.isArray(this.data.ogrenciler)) this.data.ogrenciler = [];
-    if (!Array.isArray(this.data.gorevler)) this.data.gorevler = [];
-    if (!Array.isArray(this.data.ogrenciKonuDurumlari)) this.data.ogrenciKonuDurumlari = [];
-    if (!Array.isArray(this.data.hataKayitlari)) this.data.hataKayitlari = [];
-    if (!Array.isArray(this.data.sinifNotlari)) this.data.sinifNotlari = [];
-    if (!Array.isArray(this.data.calismaKayitlari)) this.data.calismaKayitlari = [];
-    if (!Array.isArray(this.data.denemeSinavlari)) this.data.denemeSinavlari = [];
-    if (!Array.isArray(this.data.dersler)) this.data.dersler = [];
-    if (!Array.isArray(this.data.konular)) this.data.konular = [];
-    if (!Array.isArray(this.data.kaynaklar)) this.data.kaynaklar = [];
-    if (!Array.isArray(this.data.sinavlar)) this.data.sinavlar = [];
-    if (!this.data.aliskanlikZincirleri || typeof this.data.aliskanlikZincirleri !== 'object') this.data.aliskanlikZincirleri = {};
-    if (!this.data.zamanPlanlari || typeof this.data.zamanPlanlari !== 'object') this.data.zamanPlanlari = {};
-    if (!this.data.zamanAyarlari || typeof this.data.zamanAyarlari !== 'object') this.data.zamanAyarlari = {};
-    if (!this.data.konuSoruKayitlari || typeof this.data.konuSoruKayitlari !== 'object') this.data.konuSoruKayitlari = {};
-    if (!this.data.cizelgeNotlari || typeof this.data.cizelgeNotlari !== 'object') this.data.cizelgeNotlari = {};
-    if (!this.data.kocProfili) {
+    const warnings = this.structureWarnings;
+
+    const asArray = (key) => {
+      const value = this.data[key];
+      if (Array.isArray(value)) return;
+      if (value && typeof value === 'object') {
+        this.data[key] = Object.values(value).filter(v => v && typeof v === 'object');
+        warnings.push(`${key}: nesne → diziye çevrildi (${this.data[key].length} kayıt)`);
+        return;
+      }
+      if (value !== undefined && value !== null) warnings.push(`${key}: ${typeof value} değeri atıldı → []`);
+      this.data[key] = [];
+    };
+
+    const asObject = (key, defaultValue) => {
+      const value = this.data[key];
+      if (value && typeof value === 'object' && !Array.isArray(value)) return;
+      if (value !== undefined && value !== null) warnings.push(`${key}: ${Array.isArray(value) ? 'dizi' : typeof value} → nesne yapıldı`);
+      this.data[key] = defaultValue;
+    };
+
+    ['ogrenciler', 'gorevler', 'ogrenciKonuDurumlari', 'hataKayitlari', 'sinifNotlari',
+      'calismaKayitlari', 'denemeSinavlari', 'dersler', 'konular', 'kaynaklar', 'sinavlar'
+    ].forEach(asArray);
+
+    asObject('aliskanlikZincirleri', {});
+    asObject('aliskanlikAySonu', {});
+    asObject('aliskanlikNotlari', {});
+    asObject('zamanPlanlari', {});
+    asObject('zamanAyarlari', {});
+    asObject('konuSoruKayitlari', {});
+    asObject('cizelgeNotlari', {});
+
+    if (!this.data.kocProfili || typeof this.data.kocProfili !== 'object') {
       this.data.kocProfili = {
         ad: 'Eren',
         soyad: 'Kaya',
@@ -96,6 +255,10 @@ class PlantrackDB {
         telefon: '',
         avatarKisa: 'EK'
       };
+    }
+
+    if (warnings.length) {
+      process.stderr.write(`[DB STRUCTURE] ${warnings.join(' | ')}\n`);
     }
   }
 
@@ -137,14 +300,20 @@ class PlantrackDB {
   }
 
   /**
-   * Atomik dosya kaydetme (tmp dosya yazıp rename ederek)
+   * Atomik dosya kaydetme (tmp dosya yazıp rename ederek).
+   * Her yazmadan önce (en fazla dakikada bir) döngüsel yedek alınır.
    */
   save() {
+    if (this.readOnly) {
+      process.stderr.write('[DB SAVE BLOCKED] Salt okunur mod: veri dosyası yazılmadı.\n');
+      return false;
+    }
     try {
       const dir = path.dirname(this.dbPath);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
+      this.autoBackup();
       const tmpPath = `${this.dbPath}.tmp.${Date.now()}`;
       fs.writeFileSync(tmpPath, JSON.stringify(this.data, null, 2), 'utf8');
       fs.renameSync(tmpPath, this.dbPath);
@@ -152,6 +321,30 @@ class PlantrackDB {
     } catch (err) {
       process.stderr.write(`[DB SAVE ERROR] ${err.message}\n`);
       return false;
+    }
+  }
+
+  /** Döngüsel otomatik yedek: jYedek/auto_<zaman>.json, en fazla 20 dosya. */
+  autoBackup() {
+    try {
+      const now = Date.now();
+      if (now - (this.autoBackupLast || 0) < AUTO_BACKUP_MS) return;
+      if (!fs.existsSync(this.dbPath)) return;
+      if (!fs.existsSync(this.backupDir)) fs.mkdirSync(this.backupDir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const dest = path.join(this.backupDir, `auto_${stamp}.json`);
+      fs.copyFileSync(this.dbPath, dest);
+      this.autoBackupLast = now;
+
+      const files = fs.readdirSync(this.backupDir)
+        .filter(f => f.startsWith('auto_') && f.endsWith('.json'))
+        .sort();
+      while (files.length > AUTO_BACKUP_KEEP) {
+        const old = files.shift();
+        try { fs.unlinkSync(path.join(this.backupDir, old)); } catch (_) {}
+      }
+    } catch (err) {
+      process.stderr.write(`[DB AUTO BACKUP WARN] ${err.message}\n`);
     }
   }
 
@@ -261,7 +454,7 @@ class PlantrackDB {
   }
 
   addStudent(studentData) {
-    const id = studentData.id || `ogr-${Date.now()}`;
+    const id = studentData.id || V.makeId('ogr', new Set((this.data.ogrenciler || []).map(s => String(s.id))));
     const ad = (studentData.ad || '').trim();
     const soyad = (studentData.soyad || '').trim();
     const adSoyad = studentData.adSoyad || `${ad} ${soyad}`.trim();
@@ -415,7 +608,7 @@ class PlantrackDB {
   }
 
   addTask(taskData) {
-    const id = taskData.id || `grv-${Date.now()}`;
+    const id = taskData.id || V.makeId('grv', new Set((this.data.gorevler || []).map(t => String(t.id))));
     const task = {
       id,
       ogrenciId: taskData.ogrenciId,
@@ -621,7 +814,7 @@ class PlantrackDB {
       this.data.ogrenciKonuDurumlari[idx].guncellenmeTarihi = now;
     } else {
       this.data.ogrenciKonuDurumlari.push({
-        id: `okd-${Date.now()}`,
+        id: V.makeId('okd', new Set(this.data.ogrenciKonuDurumlari.map(r => String(r.id)))),
         ogrenciId,
         konuId,
         durum: durum || 'islenmedi',
@@ -750,7 +943,7 @@ class PlantrackDB {
   }
 
   addMockExam(examData) {
-    const id = examData.id || `dnm-${Date.now()}`;
+    const id = examData.id || V.makeId('dnm', new Set((this.data.denemeSinavlari || []).map(e => String(e.id))));
     const exam = {
       ...examData,
       id,
@@ -792,7 +985,7 @@ class PlantrackDB {
   }
 
   addResource(resourceData) {
-    const id = resourceData.id || `kyn-${Date.now()}`;
+    const id = resourceData.id || V.makeId('kyn', new Set((this.data.kaynaklar || []).map(k => String(k.id))));
     const resource = {
       id,
       ad: resourceData.ad || 'Kaynak Kitap',
@@ -800,7 +993,8 @@ class PlantrackDB {
       modulId: resourceData.modulId || ['lgs', 'yks', 'ara-sinif'],
       tur: resourceData.tur || 'Soru Bankası',
       zorluk: Number(resourceData.zorluk) || 3,
-      aciklama: resourceData.aciklama || ''
+      aciklama: resourceData.aciklama || '',
+      dersId: resourceData.dersId || ''
     };
     this.data.kaynaklar.push(resource);
     this.save();
@@ -831,7 +1025,15 @@ class PlantrackDB {
     if (!ogrenciId) return null;
     const chains = (this.data.aliskanlikZincirleri && this.data.aliskanlikZincirleri[ogrenciId]) || [];
     const logs = (this.data.calismaKayitlari || []).filter(c => c.ogrenciId === ogrenciId && c.tur === 'aliskanlik');
-    const notes = (this.data.aliskanlikNotlari && this.data.aliskanlikNotlari[ogrenciId]) || {};
+    // Notlar uygulamada düz anahtar kullanır: ogrenciId_yilAy (js/store.js:1926)
+    const notes = {};
+    const prefix = `${ogrenciId}_`;
+    Object.keys(this.data.aliskanlikNotlari || {}).forEach(key => {
+      const value = this.data.aliskanlikNotlari[key];
+      if (key.startsWith(prefix) && typeof value !== 'object') {
+        notes[key.slice(prefix.length)] = value;
+      }
+    });
     return {
       ogrenciId,
       zincirler: chains,
@@ -927,12 +1129,16 @@ class PlantrackDB {
     };
   }
 
-  recordQuestionCount({ ogrenciId, konuId, donem, hafta, dogru = 0, yanlis = 0, bos = 0, toplam = null }) {
-    if (!ogrenciId || !konuId || !donem || !hafta) return null;
+  recordQuestionCount({ ogrenciId, konuId, yilAy, donem, tur, hafta, dogru = 0, yanlis = 0, bos = 0, toplam = null }) {
+    if (!ogrenciId || !konuId) return null;
+    const period = yilAy || donem;
+    const week = tur !== undefined && tur !== null && tur !== '' ? tur : hafta;
+    if (!period || week === undefined || week === null || week === '') return null;
     if (!this.data.konuSoruKayitlari) this.data.konuSoruKayitlari = {};
 
-    const key = `${ogrenciId}_${konuId}_${donem}_${hafta}`;
-    const s = toplam !== null ? Number(toplam) : (Number(dogru) + Number(yanlis) + Number(bos));
+    // Uygulama anahtarı: ogrenciId_konuId_yilAy_hf<tur>  (js/store.js:2034)
+    const key = V.keyKonuSoru(ogrenciId, konuId, period, String(week).replace(/^hf/i, ''));
+    const s = toplam !== null && toplam !== undefined ? Number(toplam) : (Number(dogru) + Number(yanlis) + Number(bos));
     const val = {
       d: Number(dogru),
       y: Number(yanlis),
@@ -1061,6 +1267,18 @@ class PlantrackDB {
     // cascade grades
     if (Array.isArray(this.data.sinifNotlari)) {
       this.data.sinifNotlari = this.data.sinifNotlari.filter(n => String(n.dersId) !== targetId);
+    }
+    // cascade resources
+    if (Array.isArray(this.data.kaynaklar)) {
+      this.data.kaynaklar = this.data.kaynaklar.filter(k => String(k.dersId) !== targetId);
+    }
+    // deneme kayıtlarındaki ders bağını kopart (deneme silinmez, yalnızca dersId temizlenir)
+    if (Array.isArray(this.data.denemeSinavlari)) {
+      this.data.denemeSinavlari.forEach(exam => {
+        (Array.isArray(exam.dersler) ? exam.dersler : []).forEach(d => {
+          if (String(d.dersId) === targetId) d.dersId = '';
+        });
+      });
     }
     this.save();
     return true;
@@ -1229,33 +1447,42 @@ class PlantrackDB {
     return { ogrenciId, zincirler: this.data.aliskanlikZincirleri[ogrenciId] };
   }
 
-  updateHabitMonthEnd({ ogrenciId, yilAy, aliskanlikNo, gunSayisi, not, genelAyNotu }) {
+  updateHabitMonthEnd({ ogrenciId, yilAy, aliskanlikId, aliskanlikNo, gunSayisi, not, genelAyNotu }) {
     if (!ogrenciId || !yilAy) return null;
     if (!this.data.aliskanlikAySonu) this.data.aliskanlikAySonu = {};
     if (!this.data.aliskanlikNotlari) this.data.aliskanlikNotlari = {};
-    if (!this.data.aliskanlikAySonu[ogrenciId]) this.data.aliskanlikAySonu[ogrenciId] = {};
-    if (!this.data.aliskanlikAySonu[ogrenciId][yilAy]) this.data.aliskanlikAySonu[ogrenciId][yilAy] = {};
 
-    if (aliskanlikNo !== undefined) {
-      const no = Number(aliskanlikNo);
-      if (!this.data.aliskanlikAySonu[ogrenciId][yilAy][no]) {
-        this.data.aliskanlikAySonu[ogrenciId][yilAy][no] = {};
-      }
-      if (gunSayisi !== undefined) this.data.aliskanlikAySonu[ogrenciId][yilAy][no].gunSayisi = String(gunSayisi);
-      if (not !== undefined) this.data.aliskanlikAySonu[ogrenciId][yilAy][no].not = String(not);
+    let habitId = aliskanlikId;
+    if (!habitId && aliskanlikNo !== undefined && aliskanlikNo !== null && aliskanlikNo !== '') {
+      const chains = (this.data.aliskanlikZincirleri && this.data.aliskanlikZincirleri[ogrenciId]) || [];
+      const idx = Number(aliskanlikNo) - 1;
+      habitId = (chains[idx] && chains[idx].id) || `al-${aliskanlikNo}`;
+    }
+
+    let aySonu = null;
+    if (habitId) {
+      // Uygulama anahtarı: ogrenciId_aliskanlikId_yilAy  (js/store.js:1863)
+      const key = V.keyAliskanlikAySonu(ogrenciId, habitId, yilAy);
+      const prev = this.data.aliskanlikAySonu[key] || {};
+      if (gunSayisi !== undefined) prev.gun = Math.max(0, Math.min(31, Number(gunSayisi) || 0));
+      if (not !== undefined) prev.not = String(not);
+      prev.updatedAt = new Date().toISOString();
+      this.data.aliskanlikAySonu[key] = prev;
+      aySonu = prev;
     }
 
     if (genelAyNotu !== undefined) {
-      if (!this.data.aliskanlikNotlari[ogrenciId]) this.data.aliskanlikNotlari[ogrenciId] = {};
-      this.data.aliskanlikNotlari[ogrenciId][yilAy] = String(genelAyNotu);
+      // Uygulama anahtarı: ogrenciId_yilAy  (js/store.js:1926)
+      this.data.aliskanlikNotlari[V.keyAliskanlikNot(ogrenciId, yilAy)] = String(genelAyNotu);
     }
 
     this.save();
     return {
       ogrenciId,
       yilAy,
-      aySonu: this.data.aliskanlikAySonu[ogrenciId][yilAy],
-      genelAyNotu: this.data.aliskanlikNotlari[ogrenciId] ? this.data.aliskanlikNotlari[ogrenciId][yilAy] : ''
+      aliskanlikId: habitId || '',
+      aySonu: aySonu || {},
+      genelAyNotu: this.data.aliskanlikNotlari[V.keyAliskanlikNot(ogrenciId, yilAy)] || ''
     };
   }
 
@@ -1292,14 +1519,30 @@ class PlantrackDB {
           soruTakibi: this.getQuestionTracking({ ogrenciId, dersId }),
           cizelgeNotu: this.data.cizelgeNotlari && dersId ? this.data.cizelgeNotlari[`${ogrenciId}_${dersId}`] : ''
         };
-      case 'aliskanlik':
+      case 'aliskanlik': {
+        const ay = yilAy || new Date().toISOString().slice(0, 7);
+        const prefix = `${ogrenciId}_`;
+        const suffix = `_${ay}`;
+        const aySonu = {};
+        Object.keys(this.data.aliskanlikAySonu || {}).forEach(key => {
+          if (key.startsWith(prefix) && key.endsWith(suffix)) {
+            const habitId = key.slice(prefix.length, key.length - suffix.length);
+            const value = this.data.aliskanlikAySonu[key];
+            if (value && typeof value === 'object') {
+              aySonu[habitId] = Object.assign({}, value, {
+                gunSayisi: value.gun !== undefined ? value.gun : (value.gunSayisi !== undefined ? value.gunSayisi : 0)
+              });
+            }
+          }
+        });
         return {
           ogrenciId,
-          yilAy: yilAy || new Date().toISOString().slice(0, 7),
+          yilAy: ay,
           aliskanliklar: this.getStudentHabits(ogrenciId),
-          aySonu: (this.data.aliskanlikAySonu && this.data.aliskanlikAySonu[ogrenciId] && this.data.aliskanlikAySonu[ogrenciId][yilAy]) || {},
-          genelNot: (this.data.aliskanlikNotlari && this.data.aliskanlikNotlari[ogrenciId] && this.data.aliskanlikNotlari[ogrenciId][yilAy]) || ''
+          aySonu,
+          genelNot: this.data.aliskanlikNotlari ? (this.data.aliskanlikNotlari[V.keyAliskanlikNot(ogrenciId, ay)] || '') : ''
         };
+      }
       default:
         throw new Error(`Bilinmeyen şablon türü: ${sablon}`);
     }

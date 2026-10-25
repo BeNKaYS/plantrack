@@ -1,5 +1,5 @@
 {
-  "surum": "8.61",
-  "tarih": "2026-10-18",
-  "not": "Ayarlar > Programı Güncelle (canlı güncelleme) ve arayüzün sunucudan yüklenmesi eklendi"
+  "surum": "9.0",
+  "tarih": "2026-10-25",
+  "not": "MCP veri bekçisi: referans doğrulama, bozuk veride yedekten kurtarma, çakışma kilidi, çizelge anahtar uyumu. Güncelleme: yerel klasör + GitHub, sürüm farkı bildirimi ve geri alma."
 }

@@ -171,7 +171,7 @@ const Store = {
         const res = await fetch(this.syncUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: this.data }),
+          body: JSON.stringify({ data: this.data, baseModified: this.lastServerModified || 0 }),
           ...(controller ? { signal: controller.signal } : {})
         });
         if (timer) clearTimeout(timer);
@@ -185,6 +185,15 @@ const Store = {
           if (typeof window !== 'undefined' && window.App && typeof App.renderMcpStatusBadges === 'function') {
             App.renderMcpStatusBadges(true);
           }
+        } else if (res.status === 409) {
+          // Çakışma: MCP (yapay zekâ) bizden sonra yazmış. Kendi kopyamızı göndermeyi bırak,
+          // sunucudaki güncel veriyi çek. Aksi hâlde AI'ın yazdığı veri ezilir.
+          const json = await res.json().catch(() => null);
+          this._pendingPush = false;
+          this._conflictPull = true;
+          this.lastServerModified = 0;
+          this.liveSyncConnected = true;
+          console.warn('[Store] MCP verisi bu sırada değişti; sunucudaki güncel veri çekilecek.', json);
         }
       } else {
         // MCP sunucusundan güncel veriyi çek
@@ -222,7 +231,10 @@ const Store = {
       this.liveSyncConnected = false;
     } finally {
       this.isSyncing = false;
-      if (this._pendingPush) {
+      if (this._conflictPull) {
+        this._conflictPull = false;
+        this.syncWithServer(false).catch(() => {});
+      } else if (this._pendingPush) {
         this._pendingPush = false;
         this.syncWithServer(true).catch(() => {});
       }

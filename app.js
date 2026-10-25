@@ -91,6 +91,8 @@ const App = {
     if (window.lucide) {
       lucide.createIcons();
     }
+    // Açılışta sessiz güncelleme kontrolü (6 saatte bir, kaynak ayarlıysa)
+    setTimeout(() => { this.checkUpdateOnStartup().catch(() => {}); }, 4000);
   },
 
   // ─────────────────────────────────────────────────────────────
@@ -330,53 +332,88 @@ const App = {
   },
 
   renderCurrentView() {
-    Store.refreshDeadlines();
-    this.syncActiveStudentState();
-    this.updateGlobalBadges();
+    try {
+      Store.refreshDeadlines();
+      this.syncActiveStudentState();
+      this.updateGlobalBadges();
 
-    switch (this.currentView) {
-      case 'overview':
-        this.renderOverview();
-        break;
-      case 'cockpit':
-        this.renderCockpit();
-        break;
-      case 'matrix':
-        this.renderMatrix();
-        break;
-      case 'grid-matrix':
-        this.renderGridMatrix();
-        break;
-      case 'tasks':
-        this.renderTasks();
-        break;
-      case 'report':
-        this.renderReport();
-        break;
-      case 'deneme-raporu':
-        this.renderDenemeRaporu();
-        break;
-      case 'hata-defteri':
-        this.renderHataDefteri();
-        break;
-      case 'cizelge-robotu':
-        this.renderCizelgeRobotu();
-        break;
-      case 'curriculum-pool':
-        this.renderCurriculumPool();
-        break;
-      case 'library':
-        this.renderLibrary();
-        break;
-      case 'students':
-        this.renderStudents();
-        break;
-      case 'sinav-notlari':
-        this.renderSinavNotlari();
-        break;
-      default:
-        break;
+      switch (this.currentView) {
+        case 'overview':
+          this.renderOverview();
+          break;
+        case 'cockpit':
+          this.renderCockpit();
+          break;
+        case 'matrix':
+          this.renderMatrix();
+          break;
+        case 'grid-matrix':
+          this.renderGridMatrix();
+          break;
+        case 'tasks':
+          this.renderTasks();
+          break;
+        case 'report':
+          this.renderReport();
+          break;
+        case 'deneme-raporu':
+          this.renderDenemeRaporu();
+          break;
+        case 'hata-defteri':
+          this.renderHataDefteri();
+          break;
+        case 'cizelge-robotu':
+          this.renderCizelgeRobotu();
+          break;
+        case 'curriculum-pool':
+          this.renderCurriculumPool();
+          break;
+        case 'library':
+          this.renderLibrary();
+          break;
+        case 'students':
+          this.renderStudents();
+          break;
+        case 'sinav-notlari':
+          this.renderSinavNotlari();
+          break;
+        default:
+          break;
+      }
+    } catch (err) {
+      // Tek bir görünümdeki veri hatası tüm uygulamayı kilitlemesin.
+      console.error('[Plantrack] Görünüm çizilemedi:', this.currentView, err);
+      this.renderViewError(err);
     }
+  },
+
+  /**
+   * Bir görünüm çizilemezse boş ekran yerine sebebi göster.
+   * Veri kaynaklı hataların çoğu MCP'den gelen eksik/yanlış referanstan çıkar;
+   * kullanıcı hangi görünümün ve hangi hatanın olduğunu görsün.
+   */
+  renderViewError(err) {
+    const sec = document.getElementById(`view-${this.currentView}`);
+    if (!sec) return;
+    const mesaj = (err && (err.message || String(err))) || 'Bilinmeyen hata';
+    const detay = (err && err.stack) ? String(err.stack).split('\n').slice(0, 4).join('\n') : '';
+    sec.innerHTML = `
+      <div class="p-6 max-w-2xl mx-auto">
+        <div class="rounded-[var(--radius-md)] border border-rose-500/40 bg-rose-500/5 p-5">
+          <div class="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-bold text-sm">
+            <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+            <span>Bu görünüm yüklenemedi: ${this.escapeHtml(this.currentView)}</span>
+          </div>
+          <p class="mt-2 text-xs text-[var(--color-ink-muted)] break-words">${this.escapeHtml(mesaj)}</p>
+          ${detay ? `<pre class="mt-3 text-[10px] leading-relaxed text-[var(--color-ink-faint)] overflow-x-auto whitespace-pre-wrap">${this.escapeHtml(detay)}</pre>` : ''}
+          <div class="mt-4 flex flex-wrap gap-2">
+            <button type="button" onclick="App.renderCurrentView()" class="btn-tactile btn-tactile-primary text-xs py-1.5 px-3">Yeniden Dene</button>
+            <button type="button" onclick="Store.forceSyncNow()" class="btn-tactile btn-tactile-secondary text-xs py-1.5 px-3">Veriyi MCP'den Yenile</button>
+          </div>
+          <p class="mt-3 text-[10px] text-[var(--color-ink-faint)]">Diğer menüler çalışmaya devam eder. Sorun sürerse MCP sağlık raporuna bakın: <code class="font-mono">http://127.0.0.1:38888/api/health</code></p>
+        </div>
+      </div>`;
+    if (window.lucide) lucide.createIcons();
   },
 
   updateGlobalBadges() {
@@ -14340,7 +14377,7 @@ html, body { margin: 0; padding: 0; background: #ffffff; }
                   <span>Programı Güncelle</span>
                 </h4>
                 <p class="text-[11px] text-[var(--color-ink-muted)] mt-0.5 leading-snug">
-                  Yeni sürümü yerel proje klasöründen çeker ve arayüzü anında yeniler. Yeniden derleme (dmg/pkg) gerekmez.
+                  Yeni sürümü yerel klasörden veya GitHub'dan çeker, arayüzü anında yeniler. Yeniden derleme (dmg/pkg) gerekmez.
                 </p>
               </div>
               <span id="guncelleme-surum" class="meta-pill text-[10px] font-mono shrink-0">v—</span>
@@ -14878,12 +14915,60 @@ Lütfen ayarı tamamlayıp "plantrack_overview" aracını çağırarak test et.`
       });
       const j = await res.json();
       if (!j.success) { this.updateSetStatus(j.error || 'Kontrol başarısız oldu.', true); return; }
-      if (j.guncel) { this.updateSetStatus('Zaten güncel (v' + (j.surum && j.surum.surum) + '). Değişiklik yok.'); return; }
+      const so = j.surumOzet || {};
+      if (j.guncel) {
+        this.updateSetStatus('Zaten güncel (v' + (so.mevcut || (j.surum && j.surum.surum) || '—') + '). Değişiklik yok.');
+        return;
+      }
       const liste = [...(j.degisecek || []), ...(j.mcpDegisecek || [])];
       const ozet = liste.slice(0, 6).join(', ') + (liste.length > 6 ? ' …' : '');
-      this.updateSetStatus(`${liste.length} dosya değişmiş: ${ozet}`);
+      const farkEtiket = so.farkTuru === 'buyuk' ? 'BÜYÜK GÜNCELLEME' : (so.farkTuru === 'kucuk' ? 'yeni özellik sürümü' : 'küçük düzeltme');
+      const surumMetni = so.mevcut && so.kaynak && so.mevcut !== so.kaynak
+        ? `v${so.mevcut} → v${so.kaynak} (${farkEtiket})`
+        : `v${so.kaynak || so.mevcut || '—'}`;
+      this.updateSetStatus(`${surumMetni} · ${liste.length} dosya değişmiş: ${ozet}`);
+      this._sonKontrolSonucu = { surumMetni, farkTuru: so.farkTuru, not: so.not, kaynakSurum: so.kaynak, mevcutSurum: so.mevcut };
     } catch (_) {
       this.updateSetStatus('MCP sunucusuna ulaşılamadı.', true);
+    }
+  },
+
+  /**
+   * Açılışta sessiz sürüm kontrolü: güncelleme kaynağı ayarlıysa ve yeni sürüm
+   * varsa kullanıcıya haber ver. Ağ/tarayıcı yükünü sınırlamak için 6 saatte bir.
+   */
+  async checkUpdateOnStartup() {
+    try {
+      const sonKontrol = Number(localStorage.getItem('plantrack_last_update_check') || 0);
+      if (Date.now() - sonKontrol < 6 * 60 * 60 * 1000) return;
+      const res = await fetch('http://127.0.0.1:38888/api/version');
+      if (!res.ok) return;
+      const v = await res.json();
+      const kaynak = (v.kaynak || v.tahminKaynak || '').trim();
+      if (!kaynak && v.kaynakTipi !== 'github' && !v.repo) return;
+      localStorage.setItem('plantrack_last_update_check', String(Date.now()));
+      const govde = {
+        sourceType: v.kaynakTipi === 'github' ? 'github' : 'local',
+        source: v.kaynakTipi === 'github' ? '' : kaynak,
+        repo: v.repo || '',
+        branch: v.branch || 'main',
+        dryRun: true
+      };
+      if (govde.sourceType === 'local' && !govde.source) return;
+      if (govde.sourceType === 'github' && !govde.repo) return;
+      const chk = await fetch('http://127.0.0.1:38888/api/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(govde)
+      });
+      const j = await chk.json();
+      const so = (j && j.surumOzet) || {};
+      if (j && j.success && !j.guncel && so.yeniSurumVar) {
+        const tur = so.farkTuru === 'buyuk' ? 'Büyük güncelleme' : (so.farkTuru === 'kucuk' ? 'Yeni sürüm' : 'Güncelleme');
+        this.showToast(`${tur}: v${so.mevcut} → v${so.kaynak}. Ayarlar > Programı Güncelle.`);
+      }
+    } catch (_) {
+      // Güncelleme kaynağı yok veya sunucu kapalı — sessizce geç
     }
   },
 
@@ -14896,6 +14981,19 @@ Lütfen ayarı tamamlayıp "plantrack_overview" aracını çağırarak test et.`
     if (govde.sourceType === 'github' && !govde.repo) {
       this.updateSetStatus('GitHub deposunu girin (örn: kullanici/plantrack).', true);
       return;
+    }
+
+    // Büyük sürüm atlamasında kullanıcıdan onay al (veri/yapı değişebilir)
+    const onceki = this._sonKontrolSonucu;
+    if (onceki && onceki.farkTuru === 'buyuk') {
+      const onay = await this.confirmModal({
+        baslik: 'Büyük Sürüm Güncellemesi',
+        mesaj: `${onceki.surumMetni} kurulacak. Büyük sürümler veri yapısını veya davranışı değiştirebilir. ` +
+          `Güncelleme öncesi yedek alınacak.${onceki.not ? '\n\nSürüm notu: ' + onceki.not : ''}`,
+        onayMetni: 'Güncelle',
+        tehlikeli: false
+      });
+      if (!onay) return;
     }
 
     const btn = document.getElementById('guncelleme-buton');
@@ -14921,11 +15019,14 @@ Lütfen ayarı tamamlayıp "plantrack_overview" aracını çağırarak test et.`
       }
 
       const n = (j.updated || []).length;
-      this.updateSetStatus(`${n} dosya güncellendi → v${j.surum && j.surum.surum}. Sayfa yenileniyor...`);
+      const so = j.surumOzet || {};
+      const surumMetni = so.mevcut && so.kaynak && so.mevcut !== so.kaynak
+        ? `v${so.mevcut} → v${so.kaynak}` : `v${(j.surum && j.surum.surum) || '—'}`;
+      this.updateSetStatus(`${n} dosya güncellendi → ${surumMetni}. Sayfa yenileniyor...`);
       if (j.mcpChanged) {
         this.showToast('Arayüz güncellendi. Sunucu dosyaları da değişti: uygulamayı kapatıp yeniden açın.');
       } else {
-        this.showToast('Program güncellendi (v' + (j.surum && j.surum.surum) + ')');
+        this.showToast('Program güncellendi (' + surumMetni + ')');
       }
       setTimeout(() => { try { location.reload(); } catch (_) {} }, 900);
     } catch (_) {
@@ -15095,6 +15196,15 @@ Lütfen ayarı tamamlayıp "plantrack_overview" aracını çağırarak test et.`
 // Global scope bağlantısı
 if (typeof window !== 'undefined') {
   window.App = App;
+
+  // Beklenmeyen hatalar sessizce kaybolmasın; konsola ve arayüze düşsün.
+  window.addEventListener('error', (event) => {
+    const mesaj = event && event.message ? event.message : 'Bilinmeyen hata';
+    console.error('[Plantrack] Yakalanmayan hata:', mesaj, event && event.error);
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error('[Plantrack] İşlenmeyen promise hatası:', event && event.reason);
+  });
 }
 
 // Sayfa yüklendiğinde başlat

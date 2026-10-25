@@ -1602,6 +1602,93 @@ const toolsList = [
   }
 ];
 
+// ─────────────────────────────────────────────────────────────
+// ŞEMA TAMAMLAYICILARI
+// validate.js'in kabul ettiği alanlar LLM'e de görünsün; aksi hâlde model
+// doğru alanı bilmediği için veriyi yanlış anahtarla gönderiyor.
+// ─────────────────────────────────────────────────────────────
+(function semalariTamamla() {
+  const bul = (name) => toolsList.find(t => t.name === name);
+  const ekle = (name, props) => {
+    const tool = bul(name);
+    if (!tool) return;
+    tool.inputSchema.properties = Object.assign(tool.inputSchema.properties || {}, props);
+  };
+  const metin = (description) => ({ type: 'string', description });
+  const sayi = (description) => ({ type: 'number', description });
+
+  ekle('plantrack_add_student', {
+    adSoyad: metin('Ad ve soyad birlikte (ad/soyad yerine kullanılabilir)'),
+    modulId: { type: 'string', enum: ['ara-sinif', 'lgs', 'yks'], description: 'Kademe; verilmezse sınıftan türetilir' }
+  });
+  ekle('plantrack_update_student', {
+    modulId: { type: 'string', enum: ['ara-sinif', 'lgs', 'yks'], description: 'Kademe' }
+  });
+  ekle('plantrack_add_task', {
+    durum: { type: 'string', enum: ['bekliyor', 'devam_ediyor', 'tamamlandi', 'gecikti'], description: 'Görev durumu (varsayılan: bekliyor)' }
+  });
+  ekle('plantrack_add_topic', {
+    kazanimlar: { type: 'array', items: { type: 'string' }, description: 'MEB/ÖSYM kazanım cümleleri' }
+  });
+  ekle('plantrack_update_topic', {
+    kazanimlar: { type: 'array', items: { type: 'string' }, description: 'MEB/ÖSYM kazanım cümleleri' }
+  });
+  ekle('plantrack_add_resource', {
+    dersId: metin('Kaynağın bağlı olduğu ders ID/adı (kütüphane ders filtresi için)')
+  });
+  ekle('plantrack_update_resource', {
+    dersId: metin('Kaynağın bağlı olduğu ders ID/adı'),
+    modulId: { type: 'array', items: { type: 'string' }, description: 'Geçerli modüller (lgs, yks, ara-sinif)' }
+  });
+  ekle('plantrack_add_mock_exam', {
+    sinavAdi: metin('Deneme adı ("ad" ile aynı)'),
+    toplam: {
+      type: 'object',
+      description: 'Toplam satırı; verilmezse derslerden hesaplanır',
+      properties: {
+        soruSayisi: { type: 'number' }, dogru: { type: 'number' }, yanlis: { type: 'number' },
+        bos: { type: 'number' }, net: { type: 'number' }, basariYuzde: { type: 'number' },
+        kurumNetOrt: { type: 'number' }, sinavNetOrt: { type: 'number' }
+      }
+    }
+  });
+  ekle('plantrack_record_question_count', {
+    yilAy: metin('Dönem (YYYY-MM). "donem" yerine kullanılabilir'),
+    tur: metin('Tur numarası: 1, 2, 3 ("hafta" yerine kullanılabilir)')
+  });
+  ekle('plantrack_get_question_tracking', {
+    yilAy: metin('Dönem filtresi (YYYY-MM)')
+  });
+  ekle('plantrack_update_habit_month_end', {
+    aliskanlikId: metin('Alışkanlık ID (örn: al-1). "aliskanlikNo" yerine kullanılabilir')
+  });
+
+  // Şema tipi düzeltmeleri (eski şemada sayı alanı string tanımlıydı)
+  const tipDuzelt = (name, key, type) => {
+    const tool = bul(name);
+    if (tool && tool.inputSchema.properties && tool.inputSchema.properties[key]) {
+      tool.inputSchema.properties[key].type = type;
+    }
+  };
+  tipDuzelt('plantrack_update_habit_month_end', 'gunSayisi', 'number');
+  tipDuzelt('plantrack_record_question_count', 'hafta', 'string');
+  ekle('plantrack_update_topic_status', {
+    dersId: metin('Konunun dersi (aynı adlı konuları ayırmak için)')
+  });
+  ekle('plantrack_update_coach_profile', {
+    avatarKisa: metin('Avatar kısaltması (en fazla 4 karakter)')
+  });
+
+  // hata türü enum'u uygulamada kullanılan "Deneme Yanlışı" değerini de kapsasın
+  ['plantrack_add_mistake', 'plantrack_update_mistake'].forEach(name => {
+    const tool = bul(name);
+    const prop = tool && tool.inputSchema.properties && tool.inputSchema.properties.hataTuru;
+    if (prop && Array.isArray(prop.enum) && !prop.enum.includes('Deneme Yanlışı')) {
+      prop.enum.push('Deneme Yanlışı');
+    }
+  });
+})();
+
 async function executeTool(db, name, args = {}) {
   try {
     switch (name) {

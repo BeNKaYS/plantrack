@@ -19,6 +19,7 @@ const os = require('os');
 const PlantrackDB = require('./db');
 const { toolsList, executeTool } = require('./tools');
 const { resourcesList, readResource } = require('./resources');
+const V = require('./validate');
 
 // STDOUT yalnızca saf JSON-RPC mesajlarına ayrılmıştır.
 // Yanlışlıkla console.log çağrıldığında stdout'un bozulmasını önlemek için stderr'e yönlendiriyoruz:
@@ -45,9 +46,11 @@ function checkDiskReload() {
   try {
     if (fs.existsSync(db.dbPath)) {
       const stat = fs.statSync(db.dbPath);
-      if (stat.mtimeMs > lastModifiedTime) {
+      // mtime ondalıklı, lastModifiedTime tam sayı → taban değerle karşılaştır
+      const mtime = Math.floor(stat.mtimeMs);
+      if (mtime > lastModifiedTime) {
         db.init();
-        lastModifiedTime = Math.floor(stat.mtimeMs);
+        lastModifiedTime = mtime;
       }
     }
   } catch (_) {}
@@ -57,8 +60,9 @@ function checkDiskReload() {
 // db.save çağrıldığında lastModifiedTime güncellensin
 const originalDbSave = db.save.bind(db);
 db.save = function() {
-  lastModifiedTime = Date.now();
-  return originalDbSave();
+  const ok = originalDbSave();
+  if (ok) lastModifiedTime = Date.now();
+  return ok;
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -78,7 +82,7 @@ const WEB_FILES = ['index.html', 'tokens.css', 'style.css', 'app.js', 'version.j
 const WEB_DIRS = ['js', 'assets/vendor'];
 const EXTRA_ASSETS = ['assets/logo.svg'];
 // Sunucu tarafı kod — değişirse uygulamanın yeniden başlatılması gerekir
-const MCP_FILES = ['server.js', 'db.js', 'tools.js', 'resources.js', 'test-client.js'];
+const MCP_FILES = ['server.js', 'db.js', 'tools.js', 'resources.js', 'validate.js', 'test-client.js'];
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -112,7 +116,59 @@ function webVersion() {
   const v = readJsonSafe(path.join(WEB_ROOT, 'version.json')) || {};
   let zaman = 0;
   try { zaman = Math.floor(fs.statSync(path.join(WEB_ROOT, 'app.js')).mtimeMs); } catch (_) {}
-  return { surum: v.surum || 'bilinmiyor', tarih: v.tarih || '', zaman, kok: WEB_ROOT };
+  return { surum: v.surum || 'bilinmiyor', tarih: v.tarih || '', not: v.not || '', zaman, kok: WEB_ROOT };
+}
+
+/** Sürüm metnini parçalara ayırır: "9.1.2" → [9,1,2] */
+function surumParcala(surum) {
+  return String(surum || '')
+    .replace(/^v/i, '')
+    .split(/[.\-+]/)
+    .map(p => parseInt(p, 10))
+    .filter(n => !isNaN(n));
+}
+
+/**
+ * İki sürümü karşılaştırır: a<b → -1, a=b → 0, a>b → 1.
+ * "8.61" gibi iki parçalı sürümler de desteklenir.
+ */
+function surumKarsilastir(a, b) {
+  const pa = surumParcala(a);
+  const pb = surumParcala(b);
+  if (!pa.length || !pb.length) return 0;
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+/** Sürüm farkının türü: buyuk (major), kucuk (minor), yama (patch) */
+function surumFarkTuru(eski, yeni) {
+  const pe = surumParcala(eski);
+  const py = surumParcala(yeni);
+  if (!pe.length || !py.length) return '';
+  if ((py[0] || 0) !== (pe[0] || 0)) return 'buyuk';
+  if ((py[1] || 0) !== (pe[1] || 0)) return 'kucuk';
+  return 'yama';
+}
+
+/** Bir yedek klasörünü hedef klasöre geri yükler (güncelleme başarısız olursa). */
+function restoreDir(backupPath, targetDir) {
+  if (!backupPath || !fs.existsSync(backupPath)) return false;
+  try {
+    for (const rel of listFilesRecursive(backupPath)) {
+      const dst = path.join(targetDir, rel);
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.copyFileSync(path.join(backupPath, rel), dst);
+    }
+    return true;
+  } catch (err) {
+    process.stderr.write(`[PLANTRACK UPDATE ROLLBACK ERROR] ${err.message}\n`);
+    return false;
+  }
 }
 
 function listFilesRecursive(dir, base = dir, acc = []) {
@@ -297,22 +353,89 @@ const syncServer = http.createServer((req, res) => {
       try {
         const payload = JSON.parse(body);
         const incomingData = payload.data || payload;
-        if (incomingData && typeof incomingData === 'object' && Array.isArray(incomingData.ogrenciler)) {
-          db.data = incomingData;
-          lastModifiedTime = Date.now();
-          db.save();
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, lastModified: lastModifiedTime }));
-        } else {
+        if (!incomingData || typeof incomingData !== 'object' || Array.isArray(incomingData) || !Array.isArray(incomingData.ogrenciler)) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Geçersiz veri formatı' }));
+          return res.end(JSON.stringify({ error: 'Geçersiz veri formatı: kök nesne ve "ogrenciler" dizisi gerekli.' }));
         }
+
+        // İyimser kilit: uygulama hangi sürümü gördüğünü söylerse, arada MCP yazdıysa ezme
+        const base = payload.baseModified !== undefined && payload.baseModified !== null
+          ? Number(payload.baseModified) : null;
+        if (base !== null && base > 0 && lastModifiedTime && base !== lastModifiedTime) {
+          res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({
+            error: 'Çakışma: veri tabanı sizin gördüğünüzden sonra değişti. Yeniden okuyup tekrar deneyin.',
+            conflict: true,
+            lastModified: lastModifiedTime
+          }));
+        }
+
+        const previous = db.data;
+        db.autoBackup();
+        db.structureWarnings = [];
+        db.data = incomingData;
+        db.ensureStructure();
+        db.migrateLegacyKeys();
+        const report = db.validateDatabase();
+
+        const strict = payload.strict === true;
+        if (strict && !report.ok) {
+          db.data = previous;
+          res.writeHead(422, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({
+            success: false,
+            error: 'Veri bütünlük kontrolünden geçmedi (strict mod).',
+            rapor: report
+          }));
+        }
+
+        if (!db.save()) {
+          db.data = previous;
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: false, error: 'Veri tabanına yazılamadı (salt okunur veya disk hatası).', readOnly: db.readOnly }));
+        }
+
+        lastModifiedTime = Date.now();
+        if (report.hataSayisi || db.structureWarnings.length) {
+          process.stderr.write(`[DB INTEGRITY] POST /api/data · ${report.hataSayisi} hata, ${report.uyariSayisi} uyarı\n`);
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          success: true,
+          lastModified: lastModifiedTime,
+          saglik: { ok: report.ok, hataSayisi: report.hataSayisi, uyariSayisi: report.uyariSayisi },
+          uyarilar: db.structureWarnings.concat(report.uyarilar.slice(0, 20)),
+          hatalar: report.hatalar.slice(0, 20)
+        }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
       }
     });
     return;
+  }
+
+  // Veri tabanı sağlık raporu (salt okunur)
+  if (req.url === '/api/health' && req.method === 'GET') {
+    checkDiskReload();
+    let report;
+    try {
+      report = db.validateDatabase();
+    } catch (err) {
+      report = { ok: false, hataSayisi: 1, hatalar: [err.message], uyarilar: [], sayilar: {} };
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({
+      status: report.ok ? 'ok' : 'degraded',
+      readOnly: db.readOnly,
+      dbPath: db.dbPath,
+      recoveredFrom: db.recoveredFrom,
+      structureWarnings: db.structureWarnings,
+      lastModified: lastModifiedTime,
+      rapor: report,
+      aracSayisi: toolsList.length,
+      kaynakSayisi: resourcesList.length
+    }));
   }
 
   // Sürüm bilgisi (Ayarlar > Programı Güncelle kartı için)
@@ -359,10 +482,29 @@ const syncServer = http.createServer((req, res) => {
           );
           const extractDir = path.join(ghTmp, 'x');
           fs.mkdirSync(extractDir, { recursive: true });
-          await execFileAsync('unzip', ['-q', zipPath, '-d', extractDir]);
+          // Yalnızca güncelleme için gereken dosyaları çıkar. Tüm arşivi açmak
+          // hem gereksiz hem de Türkçe karakterli dosya adlarında (assets/Müfredatlar)
+          // unzip'in takılmasına yol açıyordu. GitHub zip'i tek bir üst klasör
+          // içerdiği için desenler "*/" ile başlar.
+          const desenler = [
+            '*/index.html', '*/tokens.css', '*/style.css', '*/app.js', '*/version.json',
+            '*/js/*', '*/assets/vendor/*', '*/assets/logo.svg', '*/mcp/*.js'
+          ];
+          let unzipErr = null;
+          try {
+            await execFileAsync('unzip', ['-o', '-q', zipPath, ...desenler, '-d', extractDir]);
+          } catch (err) {
+            // unzip, desenlerden biri eşleşmezse 11 döner; bunu hata sayma
+            const m = String(err.message || '');
+            if (!/exit status 11|no matching files/i.test(m)) unzipErr = err;
+          }
+          // Çıkarma gerçekten işe yaradı mı? Üst klasörün altındaki kritik dosyalara bak.
           const dizinler = fs.readdirSync(extractDir, { withFileTypes: true }).filter(e => e.isDirectory());
           if (!dizinler.length) throw new Error('GitHub arşivi açılamadı');
           source = path.join(extractDir, dizinler[0].name);
+          if (unzipErr || !isPlantrackSource(source)) {
+            throw new Error('GitHub arşivi açılamadı: ' + (unzipErr ? unzipErr.message : 'index.html/app.js bulunamadı'));
+          }
         }
 
         if (!source || !isPlantrackSource(source)) {
@@ -394,6 +536,20 @@ const syncServer = http.createServer((req, res) => {
         const cfgRepo = payload.repo ? String(payload.repo).trim() : (mevcutCfg.repo || '');
         const cfgBranch = payload.branch ? String(payload.branch).trim() : (mevcutCfg.branch || 'main');
 
+        // Sürüm karşılaştırması: kurulu sürüm vs kaynaktaki sürüm
+        const mevcutSurum = webVersion();
+        const kaynakVersionJson = readJsonSafe(path.join(source, 'version.json')) || {};
+        const kaynakSurum = kaynakVersionJson.surum || '';
+        const karsilastirma = kaynakSurum ? surumKarsilastir(mevcutSurum.surum, kaynakSurum) : 0;
+        const surumOzet = {
+          mevcut: mevcutSurum.surum,
+          kaynak: kaynakSurum || mevcutSurum.surum,
+          tarih: kaynakVersionJson.tarih || '',
+          not: kaynakVersionJson.not || '',
+          yeniSurumVar: karsilastirma < 0,
+          farkTuru: kaynakSurum ? surumFarkTuru(mevcutSurum.surum, kaynakSurum) : ''
+        };
+
         // Sadece kontrol et (değişiklik listesi)
         if (payload.dryRun) {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -401,18 +557,21 @@ const syncServer = http.createServer((req, res) => {
             success: true, dryRun: true, source,
             kaynakTipi, repo: cfgRepo, branch: cfgBranch,
             degisecek, mcpDegisecek,
-            guncel: degisecek.length === 0 && mcpDegisecek.length === 0,
-            surum: webVersion()
+            guncel: degisecek.length === 0 && mcpDegisecek.length === 0 && karsilastirma >= 0,
+            surumOzet,
+            surum: mevcutSurum
           }));
         }
 
         if (degisecek.length === 0 && mcpDegisecek.length === 0) {
           writeJsonSafe(UPDATE_CFG, { kaynak: cfgKaynak, kaynakTipi, repo: cfgRepo, branch: cfgBranch, sonKontrol: new Date().toISOString() });
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: true, guncel: true, source, kaynakTipi, repo: cfgRepo, branch: cfgBranch, surum: webVersion(), mcpChanged: false }));
+          return res.end(JSON.stringify({ success: true, guncel: true, source, kaynakTipi, repo: cfgRepo, branch: cfgBranch, surum: mevcutSurum, surumOzet, mcpChanged: false }));
         }
 
+        // Yedek: arayüz + sunucu kodu (geri alma için ikisi de gerekli)
         const webYedek = degisecek.length ? backupDir(WEB_ROOT, 'web') : '';
+        const mcpYedek = mcpDegisecek.length ? backupDir(MCP_CODE_DIR, 'mcp') : '';
 
         const kopyalanan = [];
         for (const rel of degisecek) {
@@ -423,10 +582,38 @@ const syncServer = http.createServer((req, res) => {
           if (copyFileIfChanged(path.join(source, 'mcp', rel), path.join(MCP_CODE_DIR, rel))) mcpKopyalanan.push(rel);
         }
 
+        // Doğrulama: kopyalanan her dosya kaynakla birebir aynı mı?
+        const bozuk = [];
+        for (const rel of kopyalanan) {
+          try {
+            if (!fs.readFileSync(path.join(source, rel)).equals(fs.readFileSync(path.join(WEB_ROOT, rel)))) bozuk.push(rel);
+          } catch (_) { bozuk.push(rel); }
+        }
+        for (const rel of mcpKopyalanan) {
+          try {
+            if (!fs.readFileSync(path.join(source, 'mcp', rel)).equals(fs.readFileSync(path.join(MCP_CODE_DIR, rel)))) bozuk.push('mcp/' + rel);
+          } catch (_) { bozuk.push('mcp/' + rel); }
+        }
+
+        if (bozuk.length) {
+          // Yazma yarıda kaldıysa önceki sürüme dön
+          const webOk = webYedek ? restoreDir(webYedek, WEB_ROOT) : true;
+          const mcpOk = mcpYedek ? restoreDir(mcpYedek, MCP_CODE_DIR) : true;
+          process.stderr.write(`[PLANTRACK UPDATE] Doğrulama başarısız (${bozuk.length} dosya); geri alma web=${webOk} mcp=${mcpOk}\n`);
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({
+            success: false,
+            error: 'Güncelleme doğrulanamadı, önceki sürüme dönüldü.',
+            bozuk,
+            geriAlindi: webOk && mcpOk,
+            yedek: { web: webYedek, mcp: mcpYedek }
+          }));
+        }
+
         const yeniSurum = (readJsonSafe(path.join(WEB_ROOT, 'version.json')) || {}).surum || '';
         writeJsonSafe(UPDATE_CFG, { kaynak: cfgKaynak, kaynakTipi, repo: cfgRepo, branch: cfgBranch, sonGuncelleme: new Date().toISOString(), sonSurum: yeniSurum });
 
-        process.stderr.write(`[PLANTRACK UPDATE] ${source} → ${WEB_ROOT} (${kopyalanan.length} web, ${mcpKopyalanan.length} sunucu dosyası)\n`);
+        process.stderr.write(`[PLANTRACK UPDATE] ${source} → ${WEB_ROOT} (${kopyalanan.length} web, ${mcpKopyalanan.length} sunucu dosyası, v${mevcutSurum.surum} → v${yeniSurum})\n`);
 
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({
@@ -435,7 +622,8 @@ const syncServer = http.createServer((req, res) => {
           updated: kopyalanan,
           mcpChanged: mcpKopyalanan.length > 0,
           mcpUpdated: mcpKopyalanan,
-          yedek: webYedek,
+          yedek: { web: webYedek, mcp: mcpYedek },
+          surumOzet,
           surum: webVersion()
         }));
       } catch (err) {
@@ -590,22 +778,44 @@ async function handleRequest(message) {
         return;
       }
       try {
-        checkDiskReload(); const toolResult = await executeTool(db, params.name, params.arguments || {});
+        checkDiskReload();
+        const tool = toolsList.find(t => t.name === params.name);
+        if (!tool) throw new V.ValidationError(`Bilinmeyen araç: ${params.name}`);
+        if (db.readOnly && /_(add|update|delete|complete|log|record|batch)_/.test(params.name)) {
+          throw new V.ValidationError(
+            'Veri tabanı salt okunur modda (bozuk dosya ve geçerli yedek yok). Yazma yapılmadı. ' +
+            'Teşhis: GET /api/health · bozuk kopya: ' + (db.recoveredFrom || '-')
+          );
+        }
+        const args = params.arguments || {};
+        // 1) şema (tip / zorunlu / enum) 2) veri tabanı referansları 3) normalizasyon
+        V.validateSchema(tool.inputSchema, args);
+        const prepared = V.normalizeToolArgs(db, params.name, args);
+        const toolResult = await executeTool(db, params.name, prepared.args);
+        let text = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2);
+        if (toolResult === undefined || toolResult === null) text = 'null';
+        if (prepared.warnings.length) {
+          text += `\n\n⚠️ Uyarılar (${prepared.warnings.length}):\n- ` + prepared.warnings.join('\n- ');
+        }
         sendResponse(id, {
           content: [
             {
               type: 'text',
-              text: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2)
+              text: text
             }
           ],
           isError: false
         });
       } catch (err) {
+        let message = err.message;
+        if (err.name === 'ValidationError' && err.details && err.details.adaylar) {
+          message += '\nAdaylar: ' + err.details.adaylar.map(a => JSON.stringify(a)).join(', ');
+        }
         sendResponse(id, {
           content: [
             {
               type: 'text',
-              text: `Hata: ${err.message}`
+              text: `Hata: ${message}`
             }
           ],
           isError: true

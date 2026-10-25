@@ -49,7 +49,7 @@ echo -e "  ✔ hdiutil (.dmg motoru): Mevcut"
 # 2. Pre-Build Kod ve Sözdizimi Denetimi
 echo -e "\n${YELLOW}[2/7] Kod ve Sözdizimi (Syntax Audit) Denetleniyor...${NC}"
 
-FILES_TO_CHECK=("app.js" "js/store.js" "js/data.js" "mcp/server.js" "mcp/db.js" "mcp/tools.js" "mcp/resources.js")
+FILES_TO_CHECK=("app.js" "js/store.js" "js/data.js" "mcp/server.js" "mcp/db.js" "mcp/tools.js" "mcp/resources.js" "mcp/validate.js")
 for f in "${FILES_TO_CHECK[@]}"; do
   if [ -f "$f" ]; then
     node -c "$f"
@@ -144,7 +144,7 @@ cp assets/icon.icns Plantrack.app/Contents/Resources/Plantrack.icns 2>/dev/null 
 
 # B. MCP Sunucu dosyalarını ve çekirdek şablonunu pakete göm
 mkdir -p Plantrack.app/Contents/Resources/mcp
-cp mcp/server.js mcp/db.js mcp/tools.js mcp/resources.js mcp/test-client.js Plantrack.app/Contents/Resources/mcp/
+cp mcp/server.js mcp/db.js mcp/tools.js mcp/resources.js mcp/validate.js mcp/test-client.js Plantrack.app/Contents/Resources/mcp/
 if [ -f "data/plantrack_db.json" ]; then
   cp data/plantrack_db.json Plantrack.app/Contents/Resources/mcp/plantrack_db.json
 fi
