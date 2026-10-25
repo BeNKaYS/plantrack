@@ -241,9 +241,11 @@ function downloadFile(url, dest, token) {
   });
 }
 
-function execFileAsync(cmd, args) {
+function execFileAsync(cmd, args, extraEnv) {
   return new Promise((resolve, reject) => {
-    require('child_process').execFile(cmd, args, { timeout: 60000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+    const opts = { timeout: 60000, maxBuffer: 4 * 1024 * 1024 };
+    if (extraEnv) opts.env = Object.assign({}, process.env, extraEnv);
+    require('child_process').execFile(cmd, args, opts, (err, stdout, stderr) => {
       if (err) return reject(new Error(String(stderr || err.message || '').slice(0, 300)));
       resolve(stdout);
     });
@@ -474,36 +476,62 @@ const syncServer = http.createServer((req, res) => {
           const ghTmp = path.join(MCP_HOME, '.update-tmp');
           try { fs.rmSync(ghTmp, { recursive: true, force: true }); } catch (_) {}
           fs.mkdirSync(ghTmp, { recursive: true });
-          const zipPath = path.join(ghTmp, 'repo.zip');
-          await downloadFile(
-            `https://codeload.github.com/${repoInfo.owner}/${repoInfo.name}/zip/refs/heads/${encodeURIComponent(branch)}`,
-            zipPath,
-            payload.token
-          );
-          const extractDir = path.join(ghTmp, 'x');
-          fs.mkdirSync(extractDir, { recursive: true });
-          // Yalnızca güncelleme için gereken dosyaları çıkar. Tüm arşivi açmak
-          // hem gereksiz hem de Türkçe karakterli dosya adlarında (assets/Müfredatlar)
-          // unzip'in takılmasına yol açıyordu. GitHub zip'i tek bir üst klasör
-          // içerdiği için desenler "*/" ile başlar.
-          const desenler = [
-            '*/index.html', '*/tokens.css', '*/style.css', '*/app.js', '*/version.json',
-            '*/js/*', '*/assets/vendor/*', '*/assets/logo.svg', '*/mcp/*.js'
-          ];
-          let unzipErr = null;
+
+          const maskele = (metin) => payload.token ? String(metin).split(String(payload.token)).join('***') : String(metin);
+
+          // 1. yol: git clone — codeload zip'i CDN'de eski sürümü tutabildiği için
+          // önce git denenir. Böylece "güncelleme var" diyip eski kodu yazmayız.
+          let klonlandi = false;
           try {
-            await execFileAsync('unzip', ['-o', '-q', zipPath, ...desenler, '-d', extractDir]);
-          } catch (err) {
-            // unzip, desenlerden biri eşleşmezse 11 döner; bunu hata sayma
-            const m = String(err.message || '');
-            if (!/exit status 11|no matching files/i.test(m)) unzipErr = err;
+            const cloneDir = path.join(ghTmp, 'clone');
+            const auth = payload.token
+              ? `https://x-access-token:${encodeURIComponent(payload.token)}@github.com/`
+              : 'https://github.com/';
+            const cloneUrl = `${auth}${repoInfo.owner}/${repoInfo.name}.git`;
+            await execFileAsync('git', [
+              'clone', '--depth', '1', '--single-branch', '--branch', branch, cloneUrl, cloneDir
+            ], { GIT_TERMINAL_PROMPT: '0' });
+            if (isPlantrackSource(cloneDir)) {
+              source = cloneDir;
+              klonlandi = true;
+            }
+          } catch (cloneErr) {
+            process.stderr.write(`[PLANTRACK UPDATE] git clone başarısız, zip'e geçiliyor: ${maskele(cloneErr.message).slice(0, 200)}\n`);
           }
-          // Çıkarma gerçekten işe yaradı mı? Üst klasörün altındaki kritik dosyalara bak.
-          const dizinler = fs.readdirSync(extractDir, { withFileTypes: true }).filter(e => e.isDirectory());
-          if (!dizinler.length) throw new Error('GitHub arşivi açılamadı');
-          source = path.join(extractDir, dizinler[0].name);
-          if (unzipErr || !isPlantrackSource(source)) {
-            throw new Error('GitHub arşivi açılamadı: ' + (unzipErr ? unzipErr.message : 'index.html/app.js bulunamadı'));
+
+          // 2. yol: GitHub zip (git yoksa veya clone başarısızsa)
+          if (!klonlandi) {
+            const zipPath = path.join(ghTmp, 'repo.zip');
+            await downloadFile(
+              `https://codeload.github.com/${repoInfo.owner}/${repoInfo.name}/zip/refs/heads/${encodeURIComponent(branch)}`,
+              zipPath,
+              payload.token
+            );
+            const extractDir = path.join(ghTmp, 'x');
+            fs.mkdirSync(extractDir, { recursive: true });
+            // Yalnızca güncelleme için gereken dosyaları çıkar. Tüm arşivi açmak
+            // hem gereksiz hem de Türkçe karakterli dosya adlarında (assets/Müfredatlar)
+            // unzip'in takılmasına yol açıyordu. GitHub zip'i tek bir üst klasör
+            // içerdiği için desenler "*/" ile başlar.
+            const desenler = [
+              '*/index.html', '*/tokens.css', '*/style.css', '*/app.js', '*/version.json',
+              '*/js/*', '*/assets/vendor/*', '*/assets/logo.svg', '*/mcp/*.js'
+            ];
+            let unzipErr = null;
+            try {
+              await execFileAsync('unzip', ['-o', '-q', zipPath, ...desenler, '-d', extractDir]);
+            } catch (err) {
+              // unzip, desenlerden biri eşleşmezse 11 döner; bunu hata sayma
+              const m = String(err.message || '');
+              if (!/exit status 11|no matching files/i.test(m)) unzipErr = err;
+            }
+            // Çıkarma gerçekten işe yaradı mı? Üst klasörün altındaki kritik dosyalara bak.
+            const dizinler = fs.readdirSync(extractDir, { withFileTypes: true }).filter(e => e.isDirectory());
+            if (!dizinler.length) throw new Error('GitHub arşivi açılamadı');
+            source = path.join(extractDir, dizinler[0].name);
+            if (unzipErr || !isPlantrackSource(source)) {
+              throw new Error('GitHub arşivi açılamadı: ' + (unzipErr ? maskele(unzipErr.message) : 'index.html/app.js bulunamadı'));
+            }
           }
         }
 
