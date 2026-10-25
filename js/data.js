@@ -48,6 +48,7 @@ const ZAMAN_KATEGORILER = [
   { id: 'konu',    label: 'Konu Çalışması',       renk: '#8b5cf6', bg: '#f5f3ff' },
   { id: 'deneme',  label: 'Deneme Sınavı',        renk: '#f59e0b', bg: '#fffbeb' },
   { id: 'mola',    label: 'Mola / Serbest Zaman', renk: '#6b7280', bg: '#f9fafb' },
+  { id: 'ozel',    label: 'Özel Not',             renk: '#0d9488', bg: '#f0fdfa' },
   { id: 'silgi',   label: 'Silgi (Temizle)',       renk: null,      bg: null      }
 ];
 

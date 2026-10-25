@@ -10938,9 +10938,21 @@ const App = {
               <i data-lucide="file-edit" class="w-3.5 h-3.5 text-[var(--color-accent)]"></i>
               <span>Özel Not / Ders Adı (İsteğe Bağlı)</span>
             </label>
-            <input type="text" id="zaman-faaliyet-not-input" 
-              placeholder="Örn: Matematik - Yeni Nesil Soru Bankası, LGS Deneme"
-              class="input-instrument w-full text-xs p-2 rounded-[var(--radius-sm)] border border-[var(--color-rule)] bg-[var(--color-paper-1)] text-[var(--color-ink)]" />
+            <div class="flex items-stretch gap-1.5">
+              <input type="text" id="zaman-faaliyet-not-input" 
+                placeholder="Örn: Matematik - Yeni Nesil Soru Bankası, LGS Deneme"
+                onkeydown="if (event.key === 'Enter') { event.preventDefault(); App.applyZamanOzelNot(); }"
+                class="input-instrument w-full text-xs p-2 rounded-[var(--radius-sm)] border border-[var(--color-rule)] bg-[var(--color-paper-1)] text-[var(--color-ink)]" />
+              <button type="button" id="zaman-faaliyet-not-kaydet" onclick="App.applyZamanOzelNot()"
+                class="btn-tactile btn-tactile-primary text-[11px] py-1.5 px-3 flex items-center gap-1 shrink-0 whitespace-nowrap"
+                title="Yazdığınız metni seçili bloğa başlık olarak yazar (Enter)">
+                <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                <span>Bloğa Yaz</span>
+              </button>
+            </div>
+            <p class="text-[10px] text-[var(--color-ink-faint)] leading-snug">
+              Tek başına kaydetmek için <strong>Bloğa Yaz</strong>'a bas. Bir faaliyet kartına tıklarsan bu metin bloğun altındaki açıklama satırı olur.
+            </p>
           </div>
 
           <!-- Hızlı Filtreleme -->
@@ -11102,6 +11114,64 @@ const App = {
       const label = faal ? faal.label : 'Faaliyet';
       this.showToast(`"${label}" ${rangeText} bloğuna uygulandı.`);
     }
+  },
+
+  /**
+   * "Özel Not" alanındaki metni seçili bloğa doğrudan başlık olarak yazar.
+   * Faaliyet kartına tıklamadan tek başına not/etiket girmeyi sağlar.
+   * Enter tuşu ve "Bloğa Yaz" düğmesi buraya bağlıdır.
+   */
+  applyZamanOzelNot() {
+    const range = this.currentZamanModalRange;
+    const ogrenciId = this.currentZamanModalOgrenciId || this.cizelgeOgrenciId || Store.data.aktifOgrenciId;
+    const input = document.getElementById('zaman-faaliyet-not-input');
+    const metin = input ? input.value.trim() : '';
+
+    if (!metin) {
+      if (input) {
+        input.classList.add('border-rose-400');
+        input.focus();
+        setTimeout(() => input.classList.remove('border-rose-400'), 1200);
+      }
+      this.showToast('Önce bloğa yazılacak metni girin.');
+      return;
+    }
+    if (!range || !ogrenciId) {
+      this.showToast('Önce takvimden bir saat aralığı seçin.');
+      return;
+    }
+
+    const kat = (typeof ZAMAN_KATEGORILER !== 'undefined' ? ZAMAN_KATEGORILER : [])
+      .find(c => c.id === 'ozel') || { renk: '#0d9488', bg: '#f0fdfa' };
+
+    const GUN_KEYS = ['pzt', 'sal', 'car', 'per', 'cum', 'cmt', 'paz'];
+    const slots = this.getZamanSlotlari(ogrenciId);
+    const minSlot = (range.minSlot !== undefined) ? range.minSlot : (range.minSaat !== undefined ? range.minSaat : 0);
+    const maxSlot = (range.maxSlot !== undefined) ? range.maxSlot : (range.maxSaat !== undefined ? range.maxSaat : 0);
+
+    const toSave = [];
+    for (let g = range.minGun; g <= range.maxGun; g++) {
+      const gunKey = GUN_KEYS[g];
+      for (let s = minSlot; s <= maxSlot; s++) {
+        const slotKey = slots[s] ? slots[s].slotKey : `${String(s).padStart(2, '0')}:00`;
+        toSave.push({
+          gun: gunKey,
+          saat: slotKey,
+          veri: { kategori: 'ozel', label: metin, renk: kat.renk, bg: kat.bg, not: '' }
+        });
+      }
+    }
+
+    if (Store.saveZamanHucresiBatch) {
+      Store.saveZamanHucresiBatch(ogrenciId, toSave, []);
+    } else {
+      toSave.forEach(({ gun, saat, veri }) => Store.saveZamanHucresi(ogrenciId, gun, saat, veri));
+    }
+
+    const rangeText = this.formatZamanRangeText(range, ogrenciId);
+    this.closeZamanFaaliyetModal();
+    this.renderCizelgePreview();
+    this.showToast(`"${metin}" ${rangeText} bloğuna yazıldı.`);
   },
 
   initZamanBlokListeners() {

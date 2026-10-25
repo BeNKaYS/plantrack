@@ -1,5 +1,5 @@
 {
-  "surum": "9.4",
+  "surum": "9.5",
   "tarih": "2026-10-25",
-  "not": "MCP kurulum rehberi düzeltildi: doğru Gemini dosyaları, Windows veritabanı yolu koda uyduruldu, yeniden başlatma notu. Windows'ta arayüz kökü sunucu tarafından hazırlanır, zip açma PowerShell'e düşer."
+  "not": "Zaman bloğu modalında özel not tek başına kaydedilebiliyor: 'Bloğa Yaz' düğmesi ve Enter desteği, yeni 'Özel Not' kategori rengi."
 }

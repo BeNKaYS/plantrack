@@ -29,7 +29,8 @@ const ZAMAN_KATEGORILERI = {
   soru: { label: 'Soru Çözümü', renk: '#10b981', bg: '#ecfdf5' },
   konu: { label: 'Konu Çalışması', renk: '#8b5cf6', bg: '#f5f3ff' },
   deneme: { label: 'Deneme Sınavı', renk: '#f59e0b', bg: '#fffbeb' },
-  mola: { label: 'Mola / Serbest Zaman', renk: '#6b7280', bg: '#f9fafb' }
+  mola: { label: 'Mola / Serbest Zaman', renk: '#6b7280', bg: '#f9fafb' },
+  ozel: { label: 'Özel Not', renk: '#0d9488', bg: '#f0fdfa' }
 };
 
 const GUN_ALIAS = {
@@ -818,9 +819,15 @@ function normalizeZamanHucre(data, warnings) {
     throw new ValidationError('"data" nesne, metin veya null olmalı.');
   }
   const rawKategori = fold(data.kategori || data.kategoriId || data.tur || 'konu');
-  const kategori = ZAMAN_KATEGORILERI[rawKategori] ? rawKategori : 'konu';
-  if (!ZAMAN_KATEGORILERI[rawKategori]) warnings.push(`zaman: "${data.kategori || ''}" kategorisi tanınmadı, "konu" kullanıldı.`);
-  const base = ZAMAN_KATEGORILERI[kategori];
+  const bilinen = ZAMAN_KATEGORILERI[rawKategori];
+  // Uygulama ZAMAN_FAALIYETLER içindeki onlarca faaliyet kimliğini kullanır
+  // (örn. "ozel-ders-etut", "eksik-konu", "dinlenme-mola"). Bunları "konu"ya
+  // çevirmek veriyi bozar; tanınmayan kimlik olduğu gibi korunur.
+  const kategori = data.kategori ? String(data.kategori) : (bilinen ? rawKategori : 'konu');
+  const base = bilinen || ZAMAN_KATEGORILERI.konu;
+  if (!bilinen && data.kategori) {
+    warnings.push(`zaman: "${data.kategori}" standart kategori listesinde yok; olduğu gibi korundu (renk verilmezse nötr kullanılır).`);
+  }
   return {
     kategori,
     label: str(data.label || data.baslik || data.ad || base.label, 'data.label'),
