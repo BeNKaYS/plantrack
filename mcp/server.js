@@ -70,7 +70,7 @@ db.save = function() {
 // Masaüstü uygulaması arayüzü gömülü dosya yerine bu kökten sunulur; böylece
 // "Programı Güncelle" butonu yeni sürümü buraya kopyalayıp sayfayı yeniler.
 // ─────────────────────────────────────────────────────────────
-const HOME_DIR = process.env.HOME || os.homedir();
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || os.homedir();
 const MCP_HOME = process.env.PLANTRACK_HOME || path.join(HOME_DIR, 'PlantrackMCP');
 const WEB_ROOT = process.env.PLANTRACK_WEB_DIR || path.join(MCP_HOME, 'web');
 const MCP_CODE_DIR = path.join(MCP_HOME, 'mcp');
@@ -81,6 +81,30 @@ const UPDATE_CFG = path.join(MCP_HOME, 'guncelleme.json');
 const WEB_FILES = ['index.html', 'tokens.css', 'style.css', 'app.js', 'version.json'];
 const WEB_DIRS = ['js', 'assets/vendor'];
 const EXTRA_ASSETS = ['assets/logo.svg'];
+
+/**
+ * Web arayüzü kökünü hazırla.
+ * macOS'ta bunu uygulama başlatıcısı yapar; Windows'ta böyle bir başlatıcı
+ * olmadığı için sunucu kendisi yapar: kaynak klasörde arayüz varsa
+ * ~/PlantrackMCP/web boşsa oraya kopyalanır. Aksi hâlde 38888 kökü 404 verir.
+ */
+function bootstrapWebRoot() {
+  try {
+    if (fs.existsSync(path.join(WEB_ROOT, 'index.html'))) return;
+    const source = path.resolve(__dirname, '..');
+    if (!isPlantrackSource(source)) return;
+    fs.mkdirSync(WEB_ROOT, { recursive: true });
+    for (const rel of collectWebFiles(source)) {
+      const dst = path.join(WEB_ROOT, rel);
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.copyFileSync(path.join(source, rel), dst);
+    }
+    process.stderr.write(`[PLANTRACK WEB] Arayüz kökü hazırlandı: ${WEB_ROOT} (kaynak: ${source})\n`);
+  } catch (err) {
+    process.stderr.write(`[PLANTRACK WEB WARN] Arayüz kökü hazırlanamadı: ${err.message}\n`);
+  }
+}
+
 // Sunucu tarafı kod — değişirse uygulamanın yeniden başlatılması gerekir
 const MCP_FILES = ['server.js', 'db.js', 'tools.js', 'resources.js', 'validate.js', 'test-client.js'];
 
@@ -540,9 +564,23 @@ const syncServer = http.createServer((req, res) => {
             try {
               await execFileAsync('unzip', ['-o', '-q', zipPath, ...desenler, '-d', extractDir]);
             } catch (err) {
-              // unzip, desenlerden biri eşleşmezse 11 döner; bunu hata sayma
+              // unzip, desenlerden biri eşleşmezse 11 döner; bunu hata sayma.
+              // Windows'ta unzip yoktur → PowerShell Expand-Archive'a düşülür.
               const m = String(err.message || '');
-              if (!/exit status 11|no matching files/i.test(m)) unzipErr = err;
+              const unzipYok = /ENOENT|not found|is not recognized/i.test(m);
+              if (unzipYok) {
+                try {
+                  // Tüm arşivi açar; ardından yalnızca gereken dosyalar kullanılır.
+                  await execFileAsync('powershell.exe', [
+                    '-NoProfile', '-NonInteractive', '-Command',
+                    `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${extractDir}' -Force`
+                  ]);
+                } catch (psErr) {
+                  unzipErr = new Error('Arşiv açma aracı bulunamadı (unzip / PowerShell). ' + maskele(psErr.message).slice(0, 160));
+                }
+              } else if (!/exit status 11|no matching files/i.test(m)) {
+                unzipErr = err;
+              }
             }
             // Çıkarma gerçekten işe yaradı mı? Üst klasörün altındaki kritik dosyalara bak.
             const dizinler = fs.readdirSync(extractDir, { withFileTypes: true }).filter(e => e.isDirectory());
@@ -771,6 +809,9 @@ syncServer.on('error', (err) => {
     process.stderr.write(`[PLANTRACK SYNC WARN] Canlı senkronizasyon portu açılamadı: ${err.message}\n`);
   }
 });
+
+// Arayüz kökü hazır (Windows'ta başlatıcı yok, sunucu kendisi tohumlar)
+bootstrapWebRoot();
 
 syncServer.listen(SYNC_PORT, '127.0.0.1', () => {
   process.stderr.write(`[PLANTRACK LIVE SYNC] Aktif! Plantrack.app canlı bağlantı adresi: http://127.0.0.1:${SYNC_PORT}\n`);

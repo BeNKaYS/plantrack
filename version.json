@@ -1,5 +1,5 @@
 {
-  "surum": "9.3",
+  "surum": "9.4",
   "tarih": "2026-10-25",
-  "not": "Sol üstteki sürüm rozeti artık version.json'dan okunuyor (sabit v1.0 kaldırıldı)."
+  "not": "MCP kurulum rehberi düzeltildi: doğru Gemini dosyaları, Windows veritabanı yolu koda uyduruldu, yeniden başlatma notu. Windows'ta arayüz kökü sunucu tarafından hazırlanır, zip açma PowerShell'e düşer."
 }

@@ -19,18 +19,22 @@ class PlantrackDB {
 
     if (!dbPath) {
       const isInsideAppBundle = __dirname.includes('.app/Contents/Resources') || __dirname.includes('/Applications/');
-      if (isInsideAppBundle) {
-        const homeDir = process.env.HOME || require('os').homedir();
+      // Windows'ta paketlenmiş kurulum yolu .app değildir (C:\Plantrack\mcp gibi).
+      // Bu yüzden Windows'ta her zaman kullanıcı klasörü kullanılır; aksi hâlde
+      // veri, kurulum klasörü altında kalır ve kullanıcı yedeğini bulamaz.
+      const isWindows = process.platform === 'win32';
+      if (isInsideAppBundle || isWindows) {
+        const homeDir = process.env.HOME || process.env.USERPROFILE || require('os').homedir();
         const userMcpDir = path.join(homeDir, 'PlantrackMCP');
-        dbPath = path.join(userMcpDir, 'data/plantrack_db.json');
+        dbPath = path.join(userMcpDir, 'data', 'plantrack_db.json');
         backupDir = path.join(userMcpDir, 'jYedek');
       } else {
         const projectRoot = path.resolve(__dirname, '..');
-        dbPath = path.join(projectRoot, 'data/plantrack_db.json');
+        dbPath = path.join(projectRoot, 'data', 'plantrack_db.json');
         backupDir = path.join(projectRoot, 'jYedek');
       }
     } else {
-      backupDir = path.join(path.dirname(dbPath), '../jYedek');
+      backupDir = path.join(path.dirname(dbPath), '..', 'jYedek');
     }
 
     this.dbPath = dbPath;

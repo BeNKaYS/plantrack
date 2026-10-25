@@ -14529,8 +14529,11 @@ html, body { margin: 0; padding: 0; background: #ffffff; }
       } else if (tab === 'mcp') {
         const isMac = this.mcpSettingsPlatform !== 'win';
 
-        // macOS yapılandırması — MCP kodu güncellenebilir konumdan (~/PlantrackMCP/mcp) okunur
-        const macServerPath = this.mcpServerYolu || '/Applications/Plantrack.app/Contents/Resources/mcp/server.js';
+        // macOS: MCP kodu güncellenebilir konumdan (~/PlantrackMCP/mcp) çalışır.
+        // Canlı sunucu yolu bilinmiyorsa (MCP kapalıysa) paket içindeki kopya kullanılır.
+        const macServerPath = this.mcpServerYolu
+          || (this.mcpStatus && this.mcpStatus.serverYolu)
+          || '/Applications/Plantrack.app/Contents/Resources/mcp/server.js';
         const macConfigJson = JSON.stringify({
           mcpServers: {
             plantrack: {
@@ -14542,8 +14545,14 @@ html, body { margin: 0; padding: 0; background: #ffffff; }
 
         const macAiPrompt = `Ben Plantrack koçluk platformunu macOS üzerinde kullanıyorum.
 Plantrack MCP sunucusunu AI asistanıma bağlamak istiyorum.
-Lütfen aşağıdaki bilgilere göre ortamımdaki MCP ayar dosyasını (Gemini için ~/.gemini/config/mcp_config.json, Claude Desktop için ~/Library/Application Support/Claude/claude_desktop_config.json veya Cursor için .cursor/mcp.json) güncelle:
+Lütfen aşağıdaki bilgilere göre ortamımdaki MCP ayar dosyasını güncelle:
 
+- Gemini CLI: ~/.gemini/settings.json
+- Gemini / Antigravity: ~/.gemini/config/mcp_config.json
+- Claude Desktop: ~/Library/Application Support/Claude/claude_desktop_config.json
+- Cursor IDE: ~/.cursor/mcp.json
+
+Yapılandırma bloğu ("mcpServers" anahtarının altına ekle):
 {
   "mcpServers": {
     "plantrack": {
@@ -14553,35 +14562,47 @@ Lütfen aşağıdaki bilgilere göre ortamımdaki MCP ayar dosyasını (Gemini i
   }
 }
 
+Not: Node.js kurulu olmalı (node -v). Ayar dosyasını kaydettikten sonra uygulamayı tamamen kapatıp yeniden aç; MCP sunucuları yalnızca açılışta yüklenir.
 Bağlantıyı sağladıktan sonra "plantrack_overview" aracını çağırarak çalıştığını test et.`;
 
         // Windows yapılandırması
+        // Köşeli parantez/tırnak kaçışı JSON'da tek ters bölü olmalı: C:\Plantrack\mcp\server.js
+        const winServerPath = 'C:\\\\Plantrack\\\\mcp\\\\server.js';
         const winConfigJson = `{
   "mcpServers": {
     "plantrack": {
       "command": "node",
-      "args": ["C:\\\\Plantrack\\\\mcp\\\\server.js"]
+      "args": ["${winServerPath}"]
     }
   }
 }`;
 
         const winAiPrompt = `Ben Plantrack koçluk platformunu Windows üzerinde kullanıyorum.
 Plantrack MCP sunucusunu AI asistanıma bağlamak istiyorum.
-Aşağıdaki bilgilere göre ortamımdaki MCP ayar dosyasını (Claude Desktop için %APPDATA%\\Claude\\claude_desktop_config.json, Cursor için %USERPROFILE%\\.cursor\\mcp.json veya Gemini için %USERPROFILE%\\.gemini\\config\\mcp_config.json) güncelle:
+Aşağıdaki bilgilere göre ortamımdaki MCP ayar dosyasını güncelle:
 
-- Önkoşul: Node.js kurulu olmalıdır (kurulu değilse 'winget install OpenJS.NodeJS' komutunu çalıştır).
+- Gemini CLI: %USERPROFILE%\\.gemini\\settings.json
+- Gemini / Antigravity: %USERPROFILE%\\.gemini\\config\\mcp_config.json
+- Claude Desktop: %APPDATA%\\Claude\\claude_desktop_config.json
+- Cursor IDE: %USERPROFILE%\\.cursor\\mcp.json
+
+- Önkoşul: Node.js kurulu olmalıdır. Kurulu değilse PowerShell'de: winget install OpenJS.NodeJS
+  Kurulumdan sonra yeni bir terminal aç ve "node -v" ile doğrula.
 - Sunucu Yolu: C:\\Plantrack\\mcp\\server.js
+  (Plantrack klasörünü bu konuma çıkardığından emin ol. Farklı bir yere kurduysan aşağıdaki yolu ona göre değiştir.)
 - Veritabanı Yolu: %USERPROFILE%\\PlantrackMCP\\data\\plantrack_db.json
+  (Sunucu bu yolu kendisi kullanır; ayar dosyasına ayrıca yazman gerekmez.)
 - Yapılandırma Bloğu:
 {
   "mcpServers": {
     "plantrack": {
       "command": "node",
-      "args": ["C:\\\\Plantrack\\\\mcp\\\\server.js"]
+      "args": ["${winServerPath}"]
     }
   }
 }
 
+Not: Ayar dosyasını kaydettikten sonra AI uygulamasını tamamen kapatıp yeniden aç; MCP sunucuları yalnızca açılışta yüklenir.
 Lütfen ayarı tamamlayıp "plantrack_overview" aracını çağırarak test et.`;
 
         return `

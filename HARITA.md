@@ -4,7 +4,7 @@
 > hangi koleksiyonu okuyor, MCP hangi aracı hangi alana yazıyor ve **veri nerede
 > eşleştirilmeden bırakılıyor** sorularını tek yerden cevaplamak.
 >
-> Son inceleme: 2026-10-25 · Sürüm 9.3 · 26.911 satır kod
+> Son inceleme: 2026-10-25 · Sürüm 9.4 · 26.911 satır kod
 
 ---
 
