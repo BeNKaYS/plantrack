@@ -372,6 +372,25 @@ const syncServer = http.createServer((req, res) => {
           }));
         }
 
+        // YIKICI YAZMA KORUMASI: hiç öğrencisi olmayan bir istemci (taze tarayıcı
+        // profili, yeni cihaz, seed veri) dolu veri tabanını silemesin.
+        // Bilinçli sıfırlama için payload.allowEmpty === true gerekir.
+        const mevcutOgrenci = (db.data && Array.isArray(db.data.ogrenciler)) ? db.data.ogrenciler.length : 0;
+        const gelenOgrenci = incomingData.ogrenciler.length;
+        if (gelenOgrenci === 0 && mevcutOgrenci > 0 && payload.allowEmpty !== true) {
+          process.stderr.write(`[DB GUARD] Boş veri gönderimi reddedildi (mevcut ${mevcutOgrenci} öğrenci korundu).\n`);
+          res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({
+            success: false,
+            bosVeri: true,
+            error: `Gönderilen veride hiç öğrenci yok; veri tabanında ${mevcutOgrenci} öğrenci var. ` +
+              'Kaza ile silmeyi önlemek için yazma reddedildi. Önce veriyi sunucudan çekin ' +
+              '(GET /api/data). Bilinçli sıfırlama için "allowEmpty": true gönderin.',
+            mevcutOgrenci,
+            lastModified: lastModifiedTime
+          }));
+        }
+
         const previous = db.data;
         db.autoBackup();
         db.structureWarnings = [];

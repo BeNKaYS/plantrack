@@ -86,7 +86,16 @@ function str(value, field) {
   if (typeof value === 'object') {
     throw new ValidationError(`"${field}" metin olmalı, nesne/dizi geldi.`);
   }
-  return String(value).trim();
+  const text = String(value).trim();
+  // Bozuk kodlama koruması: U+FFFD (replacement character), yanlış charset ile
+  // yazılmış metnin işaretidir (örn. "Öğle" → "Ö��le"). Veriye girmeden durdur.
+  if (text.includes('\uFFFD')) {
+    throw new ValidationError(
+      `"${field}" bozuk karakter içeriyor (kodlama hatası): ${JSON.stringify(text)}. ` +
+      'Metni UTF-8 olarak yeniden gönderin.'
+    );
+  }
+  return text;
 }
 
 function num(value, field, { min = null, max = null, fallback = 0 } = {}) {

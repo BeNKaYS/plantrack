@@ -160,6 +160,9 @@ const Store = {
       if (forcePush) this._pendingPush = true;
       return false;
     }
+    // Sunucudan henüz veri alınmadıysa gönderim yapma: boş/seed kopya
+    // veri tabanını ezmesin. İlk turda her zaman çekme yapılır.
+    if (forcePush && !this._hasSyncedFromServer) forcePush = false;
     this.isSyncing = true;
     let updatedFromServer = false;
     try {
@@ -207,6 +210,8 @@ const Store = {
           const json = await res.json();
           if (json && json.data && Array.isArray(json.data.ogrenciler)) {
             const serverMod = json.lastModified || 0;
+            // İlk başarılı okuma: artık push güvenli
+            this._hasSyncedFromServer = true;
             // Eğer sunucudaki veri daha yeni ise güncelle
             if (serverMod > this.lastServerModified) {
               this.lastServerModified = serverMod;
@@ -254,7 +259,16 @@ const Store = {
   save() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
-      // Canlı MCP sunucusu açıksa arka planda otomatik push et
+      // Canlı MCP sunucusu açıksa arka planda otomatik push et.
+      //
+      // GÜVENLİK: Sunucudan hiç veri çekmeden push YAPILMAZ. Taze bir tarayıcı
+      // profili / yeni cihaz seed (boş) veriyle açılır; bu boş kopya sunucuya
+      // gönderilirse gerçek veri tabanı silinir. İlk veri çekilene kadar
+      // yalnızca yerel kayıt yapılır.
+      if (!this._hasSyncedFromServer) {
+        this.syncWithServer(false).catch(() => {});
+        return;
+      }
       this.syncWithServer(true).catch(() => {});
     } catch (err) {
       console.error('Store kaydedilirken hata oluştu:', err);

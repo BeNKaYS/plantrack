@@ -12676,7 +12676,7 @@ html, body { margin: 0; padding: 0; background: #ffffff; }
       dayBlocks[gKey] = { blocksByStart, coveredIndices };
     });
 
-    // Hafta sonu blokları (raporda alt bölüm olarak gösterilir)
+    // Hafta sonu blokları (raporda iki sütun halinde gösterilir)
     const haftaSonuBloklari = (gKey) => {
       const info = dayBlocks[gKey];
       if (!info) return [];
@@ -12684,10 +12684,13 @@ html, body { margin: 0; padding: 0; background: #ffffff; }
         .map(k => info.blocksByStart[k])
         .map(b => ({
           saat: `${b.startTimeStr}–${b.endTimeStr}`,
+          baslangic: b.startTimeStr,
           label: b.cellData.label || '',
           not: b.cellData.not || '',
           renk: b.cellData.renk || '#2563eb'
-        }));
+        }))
+        // Saate göre sırala (slot indeksi sırası garanti değil; "08:00" < "10:00" metin olarak da doğru)
+        .sort((a, b) => String(a.baslangic).localeCompare(String(b.baslangic)));
     };
     const cmtBloklar = haftaSonuBloklari('cmt');
     const pazBloklar = haftaSonuBloklari('paz');
@@ -12842,16 +12845,35 @@ html, body { margin: 0; padding: 0; background: #ffffff; }
         </div>
 
         ${isPrint && this.cizelgeZamanHaftaSonuRapor ? `
-          <div style="margin-top: 4px; padding: 3px 6px; border: 1px solid #cbd5e1; border-left: 3px solid #0284c7; background: #f8fafc; border-radius: 3px; font-size: 7.6px; line-height: 1.3; color: #0f172a;">
-            <span style="font-weight: 800; text-transform: uppercase; letter-spacing: .2px; margin-right: 6px;">Hafta Sonu (Cmt–Paz):</span>
-            ${[['Cmt', cmtBloklar], ['Paz', pazBloklar]].map(([ad, bloklar]) => `
-              <span style="margin-right: 10px;">
-                <strong>${ad}:</strong>
-                ${bloklar.length === 0
-                  ? 'plan girilmemiş'
-                  : bloklar.map(b => `${b.saat} ${escapeHtml(b.label)}${b.not ? ' (' + escapeHtml(b.not) + ')' : ''}`).join(' · ')}
-              </span>
-            `).join('')}
+          <div style="margin-top: 4px; border: 1px solid #cbd5e1; border-left: 3px solid #0284c7; background: #f8fafc; border-radius: 3px; padding: 3px 5px 4px;">
+            <div style="font-weight: 800; text-transform: uppercase; letter-spacing: .3px; font-size: 7.8px; color: #0f172a; margin-bottom: 2.5px;">
+              Hafta Sonu Programı (Cmt – Paz)
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; align-items: start;">
+              ${[
+                { ad: 'Cumartesi', kisa: 'Cmt', bloklar: cmtBloklar },
+                { ad: 'Pazar', kisa: 'Paz', bloklar: pazBloklar }
+              ].map(g => `
+                <div style="border: 1px solid #e2e8f0; border-radius: 3px; background: #ffffff; overflow: hidden;">
+                  <div style="display: flex; justify-content: space-between; align-items: baseline; background: #eef2f7; border-bottom: 1px solid #e2e8f0; padding: 1.5px 5px;">
+                    <span style="font-size: 7.8px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; color: #0f172a;">${g.ad}</span>
+                    <span style="font-size: 6.8px; font-weight: 700; color: #64748b;">${g.bloklar.length} blok</span>
+                  </div>
+                  ${g.bloklar.length === 0
+                    ? `<div style="padding: 3px 5px; font-size: 7.2px; font-style: italic; color: #94a3b8;">plan girilmemiş</div>`
+                    : `<table style="width: 100%; border-collapse: collapse;">
+                        ${g.bloklar.map(b => `
+                          <tr>
+                            <td style="width: 56px; padding: 1.5px 4px; border-bottom: 1px solid #f1f5f9; font-family: ui-monospace, Menlo, monospace; font-size: 6.9px; font-weight: 700; color: ${b.renk}; white-space: nowrap; vertical-align: top;">${b.saat}</td>
+                            <td style="padding: 1.5px 4px; border-bottom: 1px solid #f1f5f9; font-size: 7.3px; line-height: 1.25; color: #0f172a;">
+                              <span style="font-weight: 700;">${escapeHtml(b.label)}</span>${b.not ? `<span style="color: #64748b; font-style: italic;"> — ${escapeHtml(b.not)}</span>` : ''}
+                            </td>
+                          </tr>
+                        `).join('')}
+                      </table>`}
+                </div>
+              `).join('')}
+            </div>
           </div>
         ` : ''}
 
