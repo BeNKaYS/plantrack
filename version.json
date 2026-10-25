@@ -1,5 +1,5 @@
 {
-  "surum": "9.2",
+  "surum": "9.3",
   "tarih": "2026-10-25",
-  "not": "Zaman çizelgesi raporunda hafta sonu planı iki sütun (Cumartesi | Pazar) ve saat sırasıyla. Veri koruması: boş kopya dolu veritabanını ezemez, bozuk kodlamalı metin reddedilir."
+  "not": "Sol üstteki sürüm rozeti artık version.json'dan okunuyor (sabit v1.0 kaldırıldı)."
 }

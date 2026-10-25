@@ -79,6 +79,7 @@ const App = {
     this.bindEvents();
     this.initSidebarResizer();
     this.initMcpStatusMonitor();
+    this.loadAppVersion();
 
     if (!Store.data.kurulumTamamlandi) {
       this.showSetupWizard();
@@ -329,6 +330,32 @@ const App = {
     if (window.lucide) {
       lucide.createIcons();
     }
+  },
+
+  /**
+   * Sol üstteki sürüm rozetini version.json'dan doldurur.
+   * Önce MCP'nin bildirdiği kurulu sürüm, olmazsa doğrudan version.json.
+   * Sürüm tek yerde tutulur; burada sabit yazılmaz.
+   */
+  async loadAppVersion() {
+    const yaz = (surum) => {
+      const el = document.getElementById('app-version-badge');
+      if (el && surum && surum !== 'bilinmiyor') el.textContent = 'v' + String(surum).replace(/^v/i, '');
+    };
+    try {
+      const res = await fetch('http://127.0.0.1:38888/api/version', { cache: 'no-store' });
+      if (res.ok) {
+        const j = await res.json();
+        if (j && j.surum) return yaz(j.surum);
+      }
+    } catch (_) { /* MCP kapalı olabilir */ }
+    try {
+      const res = await fetch('version.json', { cache: 'no-store' });
+      if (res.ok) {
+        const v = await res.json();
+        if (v && v.surum) yaz(v.surum);
+      }
+    } catch (_) { /* yoksay */ }
   },
 
   renderCurrentView() {
